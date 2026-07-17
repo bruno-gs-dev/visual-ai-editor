@@ -1,4 +1,5 @@
 import { AI } from './core.js';
+import './i18n.js';
 import './tools.js';
 import './selection.js';
 import './actions.js';

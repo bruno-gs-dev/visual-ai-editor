@@ -22,11 +22,19 @@ AI.toggleMode = function(on){
 AI._onScroll = function(){ AI.updateSelectedBoxes(); AI.positionPanel(); };
 AI._onResize = function(){ AI.updateSelectedBoxes(); AI.positionPanel(); };
 AI._onKeydown = function(e){
-  if ((e.ctrlKey || e.metaKey) && e.key === 'z'){
-    var tag = document.activeElement && document.activeElement.tagName;
-    if (tag === 'TEXTAREA' || tag === 'INPUT') return;
+  var tag = document.activeElement && document.activeElement.tagName;
+  var inField = tag === 'TEXTAREA' || tag === 'INPUT';
+
+  if ((e.ctrlKey || e.metaKey) && !e.shiftKey && e.key === 'z'){
+    if (inField) return;
     e.preventDefault();
     AI.undoLast();
+    return;
+  }
+  if (((e.ctrlKey || e.metaKey) && e.key === 'y') || ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key === 'z')){
+    if (inField) return;
+    e.preventDefault();
+    AI.redoLast();
     return;
   }
   if (e.key === 'Escape'){
@@ -44,9 +52,9 @@ AI.createUI = function(){
   AI.toolbar = document.createElement('div');
   AI.toolbar.id = 'ai-toolbar';
   AI.toolbar.innerHTML =
-    '<button type="button" class="active" data-tool="cursor" title="Selecionar">' + AI.SVG_CURSOR + '</button>' +
-    '<button type="button" data-tool="area" title="Seleção por área">' + AI.SVG_AREA + '</button>' +
-    '<button type="button" data-tool="pencil" title="Lápis (lasso)">' + AI.SVG_PENCIL + '</button>';
+    '<button type="button" class="active" data-tool="cursor" title="' + AI.t('tool.cursor') + '">' + AI.SVG_CURSOR + '</button>' +
+    '<button type="button" data-tool="area" title="' + AI.t('tool.area') + '">' + AI.SVG_AREA + '</button>' +
+    '<button type="button" data-tool="pencil" title="' + AI.t('tool.pencil') + '">' + AI.SVG_PENCIL + '</button>';
   document.body.appendChild(AI.toolbar);
 
   AI.toolbar.querySelector('[data-tool="cursor"]').addEventListener('click', function(){ AI.setTool('cursor'); });
@@ -84,23 +92,25 @@ AI.createUI = function(){
   AI.panel.id = 'ai-editor-panel';
   AI.panel.innerHTML =
     '<div style="display:flex;justify-content:space-between;align-items:center">' +
-      '<label id="ai-editor-label" style="margin:0">O que você quer mudar aqui?</label>' +
-      '<button id="ai-editor-close" type="button" style="background:none;border:none;color:#7e7e7e;font-size:18px;cursor:pointer;line-height:1;padding:0" aria-label="Fechar">×</button>' +
+      '<label id="ai-editor-label" style="margin:0">' + AI.t('panel.label.single') + '</label>' +
+      '<button id="ai-editor-close" type="button" style="background:none;border:none;color:#7e7e7e;font-size:18px;cursor:pointer;line-height:1;padding:0" aria-label="' + AI.t('panel.close') + '">×</button>' +
     '</div>' +
-    '<textarea id="ai-editor-instruction" rows="3" placeholder="Ex: troque este título, mude a cor do botão..."></textarea>' +
+    '<textarea id="ai-editor-instruction" rows="3" placeholder="' + AI.t('panel.placeholder') + '"></textarea>' +
     '<div class="actions">' +
-      '<button class="btn-apply" id="ai-editor-apply" type="button">Alterar</button>' +
-      '<button class="btn-save" id="ai-editor-save" type="button">Salvar</button>' +
-      '<button class="btn-undo" id="ai-editor-undo" type="button" title="Desfazer (Ctrl+Z)">↩</button>' +
+      '<button class="btn-apply" id="ai-editor-apply" type="button">' + AI.t('panel.apply') + '</button>' +
+      '<button class="btn-save" id="ai-editor-save" type="button">' + AI.t('panel.save') + '</button>' +
+      '<button class="btn-undo" id="ai-editor-undo" type="button" title="' + AI.t('panel.undo') + '" disabled>↩</button>' +
+      '<button class="btn-undo" id="ai-editor-redo" type="button" title="' + AI.t('panel.redo') + '" disabled>↪</button>' +
     '</div>' +
-    '<button class="btn-design" id="ai-editor-design" type="button">📖 Ver DESIGN.md</button>' +
+    '<button class="btn-design" id="ai-editor-design" type="button">' + AI.t('panel.design') + '</button>' +
     '<div class="status" id="ai-editor-status"></div>';
   document.body.appendChild(AI.panel);
 
   document.getElementById('ai-editor-close').addEventListener('click', AI.exitSelection);
-  document.getElementById('ai-editor-apply').addEventListener('click', AI.applyWithAI);
+  document.getElementById('ai-editor-apply').addEventListener('click', function(){ AI.applyWithAI(); });
   document.getElementById('ai-editor-save').addEventListener('click', AI.saveToFile);
   document.getElementById('ai-editor-undo').addEventListener('click', AI.undoLast);
+  document.getElementById('ai-editor-redo').addEventListener('click', AI.redoLast);
   document.getElementById('ai-editor-design').addEventListener('click', AI.showDesignModal);
   document.getElementById('ai-design-close').addEventListener('click', AI.hideDesignModal);
   AI.designOverlay.addEventListener('click', function(e){ if (e.target === AI.designOverlay) AI.hideDesignModal(); });
@@ -166,6 +176,10 @@ AI.init = function(options){
 
   AI.apiBase = options.apiBase || '/api';
   AI.apiToken = options.apiToken || '';
+  AI.locale = AI.resolveLocale(options.locale);
+  if (typeof options.maxHtmlSize === 'number') AI.maxHtmlSize = options.maxHtmlSize;
+  AI.onAfterApply = typeof options.onAfterApply === 'function' ? options.onAfterApply : null;
+  AI.onAfterUndo = typeof options.onAfterUndo === 'function' ? options.onAfterUndo : null;
 
   if (options.cssInject !== false){
     AI._injectCSS(options.cssUrl);
@@ -190,5 +204,8 @@ AI.destroy = function(){
   AI.active = false;
   AI.selectedEls = [];
   AI.undoStack = [];
+  AI.redoStack = [];
+  AI.patches = [];
+  AI.changes = [];
   AI.pending = false;
 };

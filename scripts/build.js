@@ -42,7 +42,7 @@ var injectedCssTemplate = 'var __EMBEDDED_CSS__ = `' + escapeForTemplateLiteral(
 
 // --- 1. Generate ESM bundle ---
 
-var ESM_ORDER = ['core.js', 'tools.js', 'selection.js', 'actions.js', 'ui.js'];
+var ESM_ORDER = ['core.js', 'i18n.js', 'tools.js', 'selection.js', 'actions.js', 'ui.js'];
 
 var esmParts = [];
 esmParts.push('// visual-ai-editor — ESM bundle');

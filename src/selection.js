@@ -41,6 +41,8 @@ AI.selectElements = function(els){
   AI.lastHtml = '';
   AI.lastSelector = '';
   AI.lastInstruction = '';
+  AI.lastSourceInfo = '';
+  AI.pendingForceHtml = '';
   AI.hoverBox.style.display = 'none';
   AI.tagLabel.style.display = 'none';
   AI.clearSelBoxes();
@@ -58,14 +60,15 @@ AI.selectElements = function(els){
   statusEl.className = 'status';
   document.getElementById('ai-editor-instruction').value = '';
   var lbl = document.getElementById('ai-editor-label');
-  lbl.textContent = els.length === 1 ? 'O que você quer mudar aqui?' : els.length + ' elementos selecionados';
+  var multiLabel = AI.t('panel.label.multi', { count: els.length });
+  lbl.textContent = els.length === 1 ? AI.t('panel.label.single') : multiLabel;
   AI.selLabel.style.display = els.length > 1 ? 'block' : 'none';
   if (els.length > 1){
     var lowest = 0;
     els.forEach(function(el){ var b = el.getBoundingClientRect(); if (b.bottom > lowest) lowest = b.bottom; });
     AI.selLabel.style.left = AI.px(els[0].getBoundingClientRect().left);
     AI.selLabel.style.top = AI.px(Math.max(0, lowest + 4));
-    AI.selLabel.textContent = els.length + ' elementos selecionados';
+    AI.selLabel.textContent = multiLabel;
   }
   document.getElementById('ai-editor-instruction').focus();
 };

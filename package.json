@@ -1,16 +1,19 @@
 {
   "name": "visual-ai-editor",
-  "version": "1.3.0",
-  "description": "AI-powered visual HTML editor with selection tools and Groq API integration",
+  "version": "1.4.0",
+  "description": "AI-powered visual HTML editor with selection tools, design-system enforcement, and surgical source patching. Works with any OpenAI-compatible LLM provider.",
   "main": "dist/ai-editor.js",
   "module": "dist/ai-editor.esm.js",
+  "types": "types/index.d.ts",
   "exports": {
     ".": {
+      "types": "./types/index.d.ts",
       "import": "./dist/ai-editor.esm.js",
       "require": "./dist/ai-editor.js",
       "default": "./dist/ai-editor.js"
     },
     "./server": {
+      "types": "./types/server.d.ts",
       "require": "./server/index.js",
       "default": "./server/index.js"
     },
@@ -26,9 +29,11 @@
     "docs/",
     "bin/",
     "lib/",
+    "types/",
     "scripts/postinstall.js",
     "examples/",
-    "README.md"
+    "README.md",
+    "CHANGELOG.md"
   ],
   "bin": {
     "visual-ai-editor": "bin/cli.js"
@@ -36,7 +41,8 @@
   "scripts": {
     "build": "node scripts/build.js",
     "dev": "node scripts/build.js --watch",
-    "postinstall": "node scripts/postinstall.js"
+    "postinstall": "node scripts/postinstall.js",
+    "test": "node --test test/"
   },
   "keywords": [
     "ai",
@@ -44,6 +50,7 @@
     "html",
     "visual",
     "groq",
+    "openai",
     "design-system",
     "layout",
     "component"

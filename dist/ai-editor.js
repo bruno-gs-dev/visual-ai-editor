@@ -24,10 +24,19 @@ var AI = {
   lastInstruction: '',
   lastSelector: '',
   lastHtml: '',
-  undoStack: [],
+  pendingForceHtml: '',   // off-palette result held back by the server; applied locally on "force"
+  lastSourceInfo: '',
+  undoStack: [],          // [{ els, newEls, patches, change }]
+  redoStack: [],
+  patches: [],            // [{ before, after }] — sent to /api/save for surgical patching
+  changes: [],            // [{ source, selector, instruction, before, after }] — sent to /api/handoff
 
   apiBase: '/api',
   apiToken: '',
+  locale: 'en',
+  maxHtmlSize: 60000,
+  onAfterApply: null,     // callback(els) — rebind page event listeners after a DOM swap
+  onAfterUndo: null,      // callback(els)
   _initialized: false,
   _eventCleanups: [],
   css: '',
@@ -54,7 +63,212 @@ var AI = {
 
   isEditorEl: function(el){
     return el && el.closest && el.closest('#ai-toolbar, #ai-editor-panel, #ai-design-overlay, #ai-draw-overlay, #ai-selection-label');
+  },
+
+  /**
+   * Best-effort source location ("file:line") for an element, so framework
+   * edits can be handed off to an AI coding agent with a real target.
+   *   1. data-ai-source attribute (set manually or by a build plugin)
+   *   2. React dev builds ≤18: fiber._debugSource ({ fileName, lineNumber })
+   *   3. Vue 3 dev builds: __vueParentComponent.type.__file
+   */
+  getSourceInfo: function(el){
+    try {
+      var tagged = el.closest && el.closest('[data-ai-source]');
+      if (tagged) return tagged.getAttribute('data-ai-source');
+
+      for (var key in el){
+        if (key.indexOf('__reactFiber$') === 0){
+          var fiber = el[key];
+          while (fiber){
+            var src = fiber._debugSource;
+            if (src && src.fileName){
+              return src.fileName + (src.lineNumber ? ':' + src.lineNumber : '');
+            }
+            fiber = fiber.return;
+          }
+          break;
+        }
+      }
+
+      var node = el;
+      while (node){
+        var comp = node.__vueParentComponent;
+        if (comp && comp.type && comp.type.__file) return comp.type.__file;
+        node = node.parentElement;
+      }
+    } catch (e) { /* detection is best-effort only */ }
+    return '';
+  },
+
+  /**
+   * Collect the CSS rules that currently apply to the selected elements (and
+   * a sample of their descendants), so the LLM knows what existing classes do.
+   * Same-origin stylesheets only; capped; failures return ''.
+   */
+  collectCssContext: function(els){
+    var MAX_CHARS = 8000;
+    var MAX_DESCENDANTS = 40;
+    try {
+      var targets = [];
+      els.forEach(function(el){
+        targets.push(el);
+        var kids = el.querySelectorAll('*');
+        for (var i = 0; i < kids.length && i < MAX_DESCENDANTS; i++) targets.push(kids[i]);
+      });
+
+      var seen = {};
+      var out = [];
+      var total = 0;
+
+      function matchesAny(selector){
+        var clean = selector.replace(/::?[a-zA-Z-]+(\([^)]*\))?/g, '') || selector;
+        for (var i = 0; i < targets.length; i++){
+          try { if (targets[i].matches(clean)) return true; } catch (e) { /* invalid after strip */ }
+        }
+        return false;
+      }
+
+      for (var s = 0; s < document.styleSheets.length && total < MAX_CHARS; s++){
+        var rules;
+        try { rules = document.styleSheets[s].cssRules; } catch (e) { continue; } // cross-origin
+        if (!rules) continue;
+        for (var r = 0; r < rules.length && total < MAX_CHARS; r++){
+          var rule = rules[r];
+          if (!rule.selectorText || !rule.cssText) continue;
+          if (seen[rule.cssText]) continue;
+          var sel = rule.selectorText;
+          if (sel === ':root' || sel === 'html' || matchesAny(sel)){
+            seen[rule.cssText] = true;
+            out.push(rule.cssText);
+            total += rule.cssText.length;
+          }
+        }
+      }
+      return out.join('\n').slice(0, MAX_CHARS);
+    } catch (e) {
+      return '';
+    }
   }
+};
+
+
+// --- i18n.js ---
+
+/**
+ * Client-side i18n. Locale resolution order:
+ *   1. init({ locale }) option
+ *   2. <html lang="..."> of the host page
+ *   3. 'en'
+ * AI.t(key, params) interpolates {name} placeholders.
+ */
+
+AI.I18N = {
+  en: {
+    'tool.cursor': 'Select',
+    'tool.area': 'Area selection',
+    'tool.pencil': 'Pencil (lasso)',
+    'panel.label.single': 'What do you want to change here?',
+    'panel.label.multi': '{count} elements selected',
+    'panel.placeholder': 'E.g.: change this title, change the button color...',
+    'panel.apply': 'Apply',
+    'panel.save': 'Save',
+    'panel.undo': 'Undo (Ctrl+Z)',
+    'panel.redo': 'Redo (Ctrl+Y)',
+    'panel.design': '📖 View DESIGN.md',
+    'panel.close': 'Close',
+    'status.empty-instruction': 'Type what you want to change.',
+    'status.applying': 'Applying with AI…',
+    'status.applied': 'Changed ✓',
+    'status.saving': 'Saving…',
+    'status.saved': 'Saved to {path} ✓',
+    'status.saved-patch': 'Saved ({applied} surgical patch(es)) ✓',
+    'status.saved-full': 'Saved (full file — some patches could not be located) ✓',
+    'status.save-error': 'Error saving the file.',
+    'status.apply-error': 'Failed to apply the change.',
+    'status.undone': 'Undone ✓',
+    'status.redone': 'Redone ✓',
+    'status.rate-limit': '⏳ Rate limit — wait {seconds}s',
+    'status.rate-limit-over': 'You can try again ✓',
+    'status.too-large': 'Selection too large ({size} chars, limit {limit}). Select something smaller.',
+    'status.count-mismatch': 'The AI returned {got} elements, expected {expected}. Try rephrasing.',
+    'status.unexpected-html': 'The AI returned unexpected HTML. Try rephrasing the instruction.',
+    'status.unexpected-response': 'Unexpected server response ({status}): {body}',
+    'status.handoff': '{count} change(s) exported to .ai-editor/pending-changes.md — apply them with your AI coding agent.',
+    'force.button': 'Apply anyway',
+    'design.loading': 'Loading...',
+    'design.error': 'Error loading DESIGN.md',
+    'design.missing':
+      '<p>This project has no <code>DESIGN.md</code> yet.</p>' +
+      '<p>Without it, the AI edits with no design reference — which increases the chance ' +
+      'of visual inconsistency (off-palette colors, spacing and components).</p>' +
+      '<p>Run this in the project terminal to generate a guided prompt:</p>' +
+      '<pre>npx visual-ai-editor design:init</pre>' +
+      '<p>Then paste the generated file (<code>DESIGN.prompt.md</code>) into your AI agent ' +
+      '(Claude Code, Cursor, etc.) and follow the instructions to create the <code>DESIGN.md</code>.</p>',
+    'design.empty': '(DESIGN.md is empty)'
+  },
+  'pt-BR': {
+    'tool.cursor': 'Selecionar',
+    'tool.area': 'Seleção por área',
+    'tool.pencil': 'Lápis (lasso)',
+    'panel.label.single': 'O que você quer mudar aqui?',
+    'panel.label.multi': '{count} elementos selecionados',
+    'panel.placeholder': 'Ex: troque este título, mude a cor do botão...',
+    'panel.apply': 'Alterar',
+    'panel.save': 'Salvar',
+    'panel.undo': 'Desfazer (Ctrl+Z)',
+    'panel.redo': 'Refazer (Ctrl+Y)',
+    'panel.design': '📖 Ver DESIGN.md',
+    'panel.close': 'Fechar',
+    'status.empty-instruction': 'Digite o que você quer mudar.',
+    'status.applying': 'Aplicando com IA…',
+    'status.applied': 'Alterado ✓',
+    'status.saving': 'Salvando…',
+    'status.saved': 'Salvo em {path} ✓',
+    'status.saved-patch': 'Salvo ({applied} patch(es) cirúrgico(s)) ✓',
+    'status.saved-full': 'Salvo (arquivo completo — alguns patches não foram localizados) ✓',
+    'status.save-error': 'Erro ao salvar o arquivo.',
+    'status.apply-error': 'Falha ao aplicar a alteração.',
+    'status.undone': 'Desfeito ✓',
+    'status.redone': 'Refeito ✓',
+    'status.rate-limit': '⏳ Rate limit — aguarde {seconds}s',
+    'status.rate-limit-over': 'Pode tentar novamente ✓',
+    'status.too-large': 'Seleção grande demais ({size} caracteres, limite {limit}). Selecione algo menor.',
+    'status.count-mismatch': 'A IA devolveu {got} elementos, esperado {expected}. Tente reformular.',
+    'status.unexpected-html': 'A IA devolveu um HTML inesperado. Tente reformular a instrução.',
+    'status.unexpected-response': 'Resposta inesperada do servidor ({status}): {body}',
+    'status.handoff': '{count} mudança(s) exportada(s) para .ai-editor/pending-changes.md — aplique com seu agente de IA.',
+    'force.button': 'Aplicar mesmo assim',
+    'design.loading': 'Carregando...',
+    'design.error': 'Erro ao carregar DESIGN.md',
+    'design.missing':
+      '<p>Este projeto ainda não tem um <code>DESIGN.md</code>.</p>' +
+      '<p>Sem ele, a IA edita sem referência de design — o que aumenta a chance ' +
+      'de inconsistência visual (cores, espaçamentos e componentes fora do padrão).</p>' +
+      '<p>Rode este comando no terminal do projeto para gerar um prompt guiado:</p>' +
+      '<pre>npx visual-ai-editor design:init</pre>' +
+      '<p>Depois cole o conteúdo gerado (<code>DESIGN.prompt.md</code>) no seu agente de IA ' +
+      '(Claude Code, Cursor, etc.) e siga as instruções para criar o <code>DESIGN.md</code>.</p>',
+    'design.empty': '(DESIGN.md vazio)'
+  }
+};
+
+AI.resolveLocale = function(explicit){
+  var candidate = explicit ||
+    (typeof document !== 'undefined' && document.documentElement && document.documentElement.lang) ||
+    'en';
+  var l = String(candidate).toLowerCase();
+  if (l === 'pt' || l.indexOf('pt-') === 0) return 'pt-BR';
+  return 'en';
+};
+
+AI.t = function(key, params){
+  var dict = AI.I18N[AI.locale] || AI.I18N.en;
+  var template = dict[key] || AI.I18N.en[key] || key;
+  return template.replace(/\{(\w+)\}/g, function(_, name){
+    return params && params[name] !== undefined ? String(params[name]) : '{' + name + '}';
+  });
 };
 
 
@@ -310,6 +524,8 @@ AI.selectElements = function(els){
   AI.lastHtml = '';
   AI.lastSelector = '';
   AI.lastInstruction = '';
+  AI.lastSourceInfo = '';
+  AI.pendingForceHtml = '';
   AI.hoverBox.style.display = 'none';
   AI.tagLabel.style.display = 'none';
   AI.clearSelBoxes();
@@ -327,14 +543,15 @@ AI.selectElements = function(els){
   statusEl.className = 'status';
   document.getElementById('ai-editor-instruction').value = '';
   var lbl = document.getElementById('ai-editor-label');
-  lbl.textContent = els.length === 1 ? 'O que você quer mudar aqui?' : els.length + ' elementos selecionados';
+  var multiLabel = AI.t('panel.label.multi', { count: els.length });
+  lbl.textContent = els.length === 1 ? AI.t('panel.label.single') : multiLabel;
   AI.selLabel.style.display = els.length > 1 ? 'block' : 'none';
   if (els.length > 1){
     var lowest = 0;
     els.forEach(function(el){ var b = el.getBoundingClientRect(); if (b.bottom > lowest) lowest = b.bottom; });
     AI.selLabel.style.left = AI.px(els[0].getBoundingClientRect().left);
     AI.selLabel.style.top = AI.px(Math.max(0, lowest + 4));
-    AI.selLabel.textContent = els.length + ' elementos selecionados';
+    AI.selLabel.textContent = multiLabel;
   }
   document.getElementById('ai-editor-instruction').focus();
 };
@@ -355,26 +572,19 @@ AI.onClick = function(e){
 
 AI.showDesignModal = function(){
   var content = document.getElementById('ai-design-content');
-  content.innerHTML = '<p style="color:#8b949e">Carregando...</p>';
+  content.innerHTML = '<p style="color:#8b949e">' + AI.t('design.loading') + '</p>';
   AI.designOverlay.classList.add('open');
   fetch(AI.apiBase + '/design')
     .then(function(r){ return r.json(); })
     .then(function(data){
       if (!data.exists){
-        content.innerHTML =
-          '<p>Este projeto ainda não tem um <code>DESIGN.md</code>.</p>' +
-          '<p>Sem ele, a IA edita sem referência de design — o que aumenta a chance ' +
-          'de inconsistência visual (cores, espaçamentos e componentes fora do padrão).</p>' +
-          '<p>Rode este comando no terminal do projeto para gerar um prompt guiado:</p>' +
-          '<pre>npx visual-ai-editor design:init</pre>' +
-          '<p>Depois cole o conteúdo gerado (<code>DESIGN.prompt.md</code>) no seu agente de IA ' +
-          '(Claude Code, Cursor, etc.) e siga as instruções para criar o <code>DESIGN.md</code>.</p>';
+        content.innerHTML = AI.t('design.missing');
         return;
       }
-      var md = data.md || '(DESIGN.md vazio)';
+      var md = data.md || AI.t('design.empty');
       content.innerHTML = typeof marked !== 'undefined' ? marked.parse(md) : '<pre>' + md + '</pre>';
     })
-    .catch(function(){ content.innerHTML = '<p style="color:#e22718">Erro ao carregar DESIGN.md</p>'; });
+    .catch(function(){ content.innerHTML = '<p style="color:#e22718">' + AI.t('design.error') + '</p>'; });
 };
 
 AI.hideDesignModal = function(){
@@ -390,12 +600,12 @@ AI.startRateLimitCountdown = function(seconds){
 
   function tick(){
     statusEl.className = 'status rate-limit';
-    statusEl.textContent = '⏳ Rate limit — aguarde ' + remaining + 's';
+    statusEl.textContent = AI.t('status.rate-limit', { seconds: remaining });
     if (remaining <= 0){
       clearInterval(AI.rateLimitTimer);
       AI.rateLimitTimer = null;
       statusEl.className = 'status';
-      statusEl.textContent = 'Pode tentar novamente ✓';
+      statusEl.textContent = AI.t('status.rate-limit-over');
       statusEl.style.color = '#0fa336';
       AI.pending = false;
       applyBtn.disabled = false;
@@ -407,6 +617,90 @@ AI.startRateLimitCountdown = function(seconds){
   AI.rateLimitTimer = setInterval(tick, 1000);
 };
 
+/** Swap `oldEls` for the elements parsed out of `newHtml`. Returns the new elements array. */
+AI._swapElements = function(oldEls, newHtml, isMulti){
+  var temp = document.createElement('div');
+  temp.innerHTML = newHtml;
+
+  if (isMulti){
+    var container = temp.querySelector('[data-ai-multi]') || temp;
+    var newChildren = Array.prototype.slice.call(container.children);
+    if (newChildren.length !== oldEls.length){
+      throw new Error(AI.t('status.count-mismatch', { got: newChildren.length, expected: oldEls.length }));
+    }
+    var updated = [];
+    oldEls.forEach(function(oldEl, i){
+      oldEl.replaceWith(newChildren[i]);
+      updated.push(newChildren[i]);
+    });
+    return updated;
+  }
+
+  if (temp.children.length !== 1){
+    throw new Error(AI.t('status.unexpected-html'));
+  }
+  var newEl = temp.children[0];
+  oldEls[0].replaceWith(newEl);
+  return [newEl];
+};
+
+AI._refreshSelectionBoxes = function(){
+  AI.clearSelBoxes();
+  AI.selectedEls.forEach(function(el){
+    var box = document.createElement('div');
+    box.className = 'ai-sel-box';
+    document.body.appendChild(box);
+    AI.selBoxEls.push(box);
+  });
+  AI.updateSelectedBoxes();
+  AI.positionPanel();
+};
+
+AI.updateUndoRedoButtons = function(){
+  var undoBtn = document.getElementById('ai-editor-undo');
+  var redoBtn = document.getElementById('ai-editor-redo');
+  if (undoBtn) undoBtn.disabled = AI.undoStack.length === 0;
+  if (redoBtn) redoBtn.disabled = AI.redoStack.length === 0;
+};
+
+/**
+ * Apply an already-known HTML result (either fresh from /api/edit, or the
+ * `html` payload the server attaches to an off-palette warning so force mode
+ * doesn't need a second round trip) and record undo/patch/change history.
+ */
+AI._commitEdit = function(params){
+  var oldEls = AI.selectedEls.slice();
+  var isMulti = oldEls.length > 1;
+  var newHtml = (params.html || '').trim();
+
+  var beforeParts = oldEls.map(function(el){ return el.outerHTML; });
+  var newEls = AI._swapElements(oldEls, newHtml, isMulti);
+  var afterParts = newEls.map(function(el){ return el.outerHTML; });
+
+  var patchEntry = beforeParts.map(function(before, i){ return { before: before, after: afterParts[i] }; });
+  var changeEntry = {
+    source: params.sourceInfo || '',
+    selector: params.selector,
+    instruction: params.instruction,
+    before: beforeParts.join(''),
+    after: afterParts.join('')
+  };
+
+  AI.undoStack.push({ els: oldEls, newEls: newEls, patches: patchEntry, change: changeEntry });
+  AI.redoStack = [];
+  AI.patches = AI.patches.concat(patchEntry);
+  AI.changes = (AI.changes || []).concat([changeEntry]);
+
+  AI.selectedEls = newEls;
+  AI.lastHtml = afterParts.join('');
+  AI._refreshSelectionBoxes();
+  AI.updateUndoRedoButtons();
+
+  if (typeof AI.onAfterApply === 'function'){
+    try { AI.onAfterApply(newEls.slice()); } catch (e) { /* consumer's problem */ }
+  }
+};
+
 AI.applyWithAI = function(force){
   if (!AI.selectedEls.length || AI.pending) return;
   var instructionEl = document.getElementById('ai-editor-instruction');
@@ -416,7 +710,7 @@ AI.applyWithAI = function(force){
 
   var selector, html;
   if (isMulti){
-    selector = AI.selectedEls.length + ' elementos';
+    selector = AI.selectedEls.length + ' elements';
     var wrapper = '<div data-ai-multi>';
     AI.selectedEls.forEach(function(el){ wrapper += el.outerHTML; });
     wrapper += '</div>';
@@ -429,12 +723,44 @@ AI.applyWithAI = function(force){
   if (!force) {
     if (!instruction){
       statusEl.style.color = '#e22718';
-      statusEl.textContent = 'Digite o que você quer mudar.';
+      statusEl.textContent = AI.t('status.empty-instruction');
       return;
     }
     AI.lastInstruction = instruction;
     AI.lastSelector = selector;
     AI.lastHtml = html;
+    AI.lastSourceInfo = AI.selectedEls.length === 1 ? AI.getSourceInfo(AI.selectedEls[0]) : '';
+    AI.pendingForceHtml = '';
+  }
+
+  if (html.length > AI.maxHtmlSize){
+    statusEl.style.color = '#e22718';
+    statusEl.className = 'status';
+    statusEl.textContent = AI.t('status.too-large', { size: html.length, limit: AI.maxHtmlSize });
+    return;
+  }
+
+  // Off-palette warnings come back with the already-computed `html` attached —
+  // forcing just applies it locally, zero extra tokens / no second request.
+  if (force && AI.pendingForceHtml){
+    try {
+      AI._commitEdit({
+        html: AI.pendingForceHtml,
+        selector: selector,
+        instruction: instruction,
+        sourceInfo: AI.lastSourceInfo
+      });
+      instructionEl.value = '';
+      statusEl.style.color = '#0fa336';
+      statusEl.className = 'status';
+      statusEl.textContent = AI.t('status.applied');
+    } catch (err) {
+      statusEl.style.color = '#e22718';
+      statusEl.className = 'status';
+      statusEl.textContent = err.message || AI.t('status.apply-error');
+    }
+    AI.pendingForceHtml = '';
+    return;
   }
 
   var applyBtn = document.getElementById('ai-editor-apply');
@@ -442,18 +768,20 @@ AI.applyWithAI = function(force){
   applyBtn.disabled = true;
   statusEl.style.color = '#7e7e7e';
   statusEl.className = 'status';
-  statusEl.textContent = 'Aplicando com IA…';
+  statusEl.textContent = AI.t('status.applying');
+
+  var css = AI.collectCssContext(AI.selectedEls);
 
   fetch(AI.apiBase + '/edit', {
     method: 'POST',
     headers: AI.authHeaders({ 'Content-Type': 'application/json' }),
-    body: JSON.stringify({ html: html, instruction: instruction, selector: selector, force: !!force })
+    body: JSON.stringify({ html: html, instruction: instruction, selector: selector, css: css, force: !!force })
   })
     .then(function(r){
       return r.text().then(function(raw){
         var data;
         try { data = raw ? JSON.parse(raw) : {}; }
-        catch (e) { data = { error: 'Resposta inesperada do servidor (' + r.status + '): ' + raw.slice(0, 200) }; }
+        catch (e) { data = { error: AI.t('status.unexpected-response', { status: r.status, body: raw.slice(0, 200) }) }; }
         return { status: r.status, data: data };
       });
     })
@@ -462,64 +790,32 @@ AI.applyWithAI = function(force){
         AI.startRateLimitCountdown(res.data.retryAfter);
         return;
       }
-      if (res.status >= 400) throw new Error(res.data && res.data.error ? res.data.error : 'Falha ao aplicar a alteração.');
+      if (res.status >= 400) throw new Error(res.data && res.data.error ? res.data.error : AI.t('status.apply-error'));
 
       if (res.data.warn){
+        AI.pendingForceHtml = res.data.html || '';
         statusEl.className = 'status warn';
         statusEl.innerHTML = '⚠ ' + res.data.warn +
-          '<br><button class="btn-force" id="ai-editor-force">Aplicar mesmo assim</button>';
+          '<br><button class="btn-force" id="ai-editor-force">' + AI.t('force.button') + '</button>';
         document.getElementById('ai-editor-force').addEventListener('click', function(){ AI.applyWithAI(true); });
         return;
       }
 
-      var newHtml = (res.data.html || '').trim();
-      var temp = document.createElement('div');
-      temp.innerHTML = newHtml;
-
-      AI.undoStack.push(AI.selectedEls.slice());
-
-      if (isMulti){
-        var container = temp.querySelector('[data-ai-multi]') || temp;
-        var newChildren = Array.prototype.slice.call(container.children);
-        if (newChildren.length !== AI.selectedEls.length){
-          throw new Error('A IA devolveu ' + newChildren.length + ' elementos, esperado ' + AI.selectedEls.length + '. Tente reformular.');
-        }
-        var updatedEls = [];
-        AI.selectedEls.forEach(function(oldEl, i){
-          oldEl.replaceWith(newChildren[i]);
-          updatedEls.push(newChildren[i]);
-        });
-        AI.selectedEls = updatedEls;
-        AI.lastHtml = '';
-        AI.selectedEls.forEach(function(el){ AI.lastHtml += el.outerHTML; });
-      } else {
-        if (temp.children.length !== 1){
-          throw new Error('A IA devolveu um HTML inesperado. Tente reformular a instrução.');
-        }
-        var newEl = temp.children[0];
-        AI.selectedEls[0].replaceWith(newEl);
-        AI.selectedEls = [newEl];
-        AI.lastHtml = newEl.outerHTML;
-      }
-
-      AI.clearSelBoxes();
-      AI.selectedEls.forEach(function(el){
-        var box = document.createElement('div');
-        box.className = 'ai-sel-box';
-        document.body.appendChild(box);
-        AI.selBoxEls.push(box);
+      AI._commitEdit({
+        html: res.data.html,
+        selector: selector,
+        instruction: instruction,
+        sourceInfo: AI.lastSourceInfo
       });
-      AI.updateSelectedBoxes();
-      AI.positionPanel();
       instructionEl.value = '';
       statusEl.style.color = '#0fa336';
       statusEl.className = 'status';
-      statusEl.textContent = 'Alterado ✓';
+      statusEl.textContent = AI.t('status.applied');
     })
     .catch(function(err){
       statusEl.style.color = '#e22718';
       statusEl.className = 'status';
-      statusEl.textContent = err.message || 'Erro ao aplicar a alteração.';
+      statusEl.textContent = err.message || AI.t('status.apply-error');
     })
     .finally(function(){
       AI.pending = false;
@@ -527,34 +823,70 @@ AI.applyWithAI = function(force){
     });
 };
 
+/**
+ * Persist recorded edits. Static/server-rendered pages: surgical patches
+ * against the source file (falls back to a full snapshot only if a patch
+ * can't be located). Framework pages (React/Vue source detected on any
+ * recorded change): exported as a handoff manifest instead — writing the
+ * rendered DOM back over JSX/templates would be wrong.
+ */
 AI.saveToFile = function(){
   var statusEl = document.getElementById('ai-editor-status');
   var saveBtn = document.getElementById('ai-editor-save');
   saveBtn.disabled = true;
   statusEl.style.color = '#7e7e7e';
   statusEl.className = 'status';
-  statusEl.textContent = 'Salvando…';
+  statusEl.textContent = AI.t('status.saving');
 
-  var clone = document.documentElement.cloneNode(true);
-  clone.querySelectorAll('#ai-toolbar,#ai-editor-hover-box,#ai-editor-selected-box,#ai-editor-tag-label,#ai-editor-panel,#ai-design-overlay,#ai-draw-overlay,.ai-sel-box,#ai-selection-label').forEach(function(el){ el.remove(); });
-  var fullHtml = '<!DOCTYPE html>\n' + clone.outerHTML;
+  var changes = AI.changes || [];
+  var hasFrameworkSource = changes.some(function(c){ return c.source; });
 
-  fetch(AI.apiBase + '/save', {
-    method: 'POST',
-    headers: AI.authHeaders({ 'Content-Type': 'application/json' }),
-    body: JSON.stringify({ html: fullHtml })
-  })
-    .then(function(r){ return r.json(); })
-    .then(function(res){
-      if (!res.ok) throw new Error(res.error || 'Erro ao salvar.');
-      statusEl.style.color = '#0fa336';
-      statusEl.className = 'status';
-      statusEl.textContent = 'Salvo em index.html ✓';
-    })
+  var request = hasFrameworkSource
+    ? fetch(AI.apiBase + '/handoff', {
+        method: 'POST',
+        headers: AI.authHeaders({ 'Content-Type': 'application/json' }),
+        body: JSON.stringify({ changes: changes })
+      }).then(function(r){ return r.json().then(function(data){ return { ok: r.ok, data: data }; }); })
+      .then(function(res){
+        if (!res.ok) throw new Error(res.data.error || AI.t('status.save-error'));
+        statusEl.style.color = '#0fa336';
+        statusEl.className = 'status';
+        statusEl.textContent = AI.t('status.handoff', { count: res.data.count });
+      })
+    : (function(){
+        var clone = document.documentElement.cloneNode(true);
+        clone.querySelectorAll(
+          '#ai-toolbar,#ai-editor-hover-box,#ai-editor-selected-box,#ai-editor-tag-label,' +
+          '#ai-editor-panel,#ai-design-overlay,#ai-draw-overlay,.ai-sel-box,#ai-selection-label'
+        ).forEach(function(el){ el.remove(); });
+        var fullHtml = '<!DOCTYPE html>\n' + clone.outerHTML;
+
+        return fetch(AI.apiBase + '/save', {
+          method: 'POST',
+          headers: AI.authHeaders({ 'Content-Type': 'application/json' }),
+          body: JSON.stringify({ html: fullHtml, page: location.pathname, patches: AI.patches })
+        })
+          .then(function(r){ return r.json().then(function(data){ return { ok: r.ok, data: data }; }); })
+          .then(function(res){
+            if (!res.ok) throw new Error(res.data.error || AI.t('status.save-error'));
+            statusEl.style.color = '#0fa336';
+            statusEl.className = 'status';
+            if (res.data.mode === 'patch'){
+              statusEl.textContent = AI.t('status.saved-patch', { applied: res.data.applied });
+            } else if (res.data.failedPatches && res.data.failedPatches.length){
+              statusEl.textContent = AI.t('status.saved-full');
+            } else {
+              statusEl.textContent = AI.t('status.saved', { path: res.data.path });
+            }
+            AI.patches = [];
+          });
+      })();
+
+  request
     .catch(function(err){
       statusEl.style.color = '#e22718';
       statusEl.className = 'status';
-      statusEl.textContent = err.message || 'Erro ao salvar o arquivo.';
+      statusEl.textContent = err.message || AI.t('status.save-error');
     })
     .finally(function(){
       saveBtn.disabled = false;
@@ -563,38 +895,66 @@ AI.saveToFile = function(){
 
 AI.undoLast = function(){
   if (!AI.undoStack.length) return;
-  var oldEls = AI.undoStack.pop();
+  var entry = AI.undoStack.pop();
   var statusEl = document.getElementById('ai-editor-status');
 
   AI.lastHtml = '';
   AI.lastSelector = '';
   AI.lastInstruction = '';
 
-  if (AI.selectedEls.length){
-    var newEls = AI.selectedEls.slice();
-    oldEls.forEach(function(oldEl, i){
-      if (newEls[i]) newEls[i].replaceWith(oldEl);
-    });
-    AI.selectedEls = oldEls;
-  } else {
-    oldEls.forEach(function(el){ document.body.appendChild(el); });
-    AI.selectedEls = oldEls;
-  }
-
-  AI.clearSelBoxes();
-  AI.selectedEls.forEach(function(el){
-    var box = document.createElement('div');
-    box.className = 'ai-sel-box';
-    document.body.appendChild(box);
-    AI.selBoxEls.push(box);
+  var currentEls = entry.newEls.slice();
+  currentEls.forEach(function(el, i){
+    var target = entry.els[i];
+    if (target) el.replaceWith(target);
   });
-  AI.updateSelectedBoxes();
-  AI.positionPanel();
+  AI.selectedEls = entry.els;
+
+  if (entry.patches.length){
+    AI.patches = AI.patches.slice(0, AI.patches.length - entry.patches.length);
+  }
+  if (AI.changes && AI.changes.length) AI.changes = AI.changes.slice(0, -1);
+  AI.redoStack.push(entry);
+
+  AI._refreshSelectionBoxes();
   AI.panel.classList.add('open');
+  AI.updateUndoRedoButtons();
+
+  if (typeof AI.onAfterUndo === 'function'){
+    try { AI.onAfterUndo(AI.selectedEls.slice()); } catch (e) { /* consumer's problem */ }
+  }
 
   statusEl.style.color = '#0fa336';
   statusEl.className = 'status';
-  statusEl.textContent = 'Desfeito ✓';
+  statusEl.textContent = AI.t('status.undone');
+};
+
+AI.redoLast = function(){
+  if (!AI.redoStack.length) return;
+  var entry = AI.redoStack.pop();
+  var statusEl = document.getElementById('ai-editor-status');
+
+  var currentEls = entry.els.slice();
+  currentEls.forEach(function(el, i){
+    var target = entry.newEls[i];
+    if (target) el.replaceWith(target);
+  });
+  AI.selectedEls = entry.newEls;
+
+  AI.patches = AI.patches.concat(entry.patches);
+  if (entry.change) AI.changes = (AI.changes || []).concat([entry.change]);
+  AI.undoStack.push(entry);
+
+  AI._refreshSelectionBoxes();
+  AI.panel.classList.add('open');
+  AI.updateUndoRedoButtons();
+
+  if (typeof AI.onAfterApply === 'function'){
+    try { AI.onAfterApply(AI.selectedEls.slice()); } catch (e) { /* consumer's problem */ }
+  }
+
+  statusEl.style.color = '#0fa336';
+  statusEl.className = 'status';
+  statusEl.textContent = AI.t('status.redone');
 };
 
 
@@ -622,11 +982,19 @@ AI.toggleMode = function(on){
 AI._onScroll = function(){ AI.updateSelectedBoxes(); AI.positionPanel(); };
 AI._onResize = function(){ AI.updateSelectedBoxes(); AI.positionPanel(); };
 AI._onKeydown = function(e){
-  if ((e.ctrlKey || e.metaKey) && e.key === 'z'){
-    var tag = document.activeElement && document.activeElement.tagName;
-    if (tag === 'TEXTAREA' || tag === 'INPUT') return;
+  var tag = document.activeElement && document.activeElement.tagName;
+  var inField = tag === 'TEXTAREA' || tag === 'INPUT';
+
+  if ((e.ctrlKey || e.metaKey) && !e.shiftKey && e.key === 'z'){
+    if (inField) return;
     e.preventDefault();
     AI.undoLast();
+    return;
+  }
+  if (((e.ctrlKey || e.metaKey) && e.key === 'y') || ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key === 'z')){
+    if (inField) return;
+    e.preventDefault();
+    AI.redoLast();
     return;
   }
   if (e.key === 'Escape'){
@@ -644,9 +1012,9 @@ AI.createUI = function(){
   AI.toolbar = document.createElement('div');
   AI.toolbar.id = 'ai-toolbar';
   AI.toolbar.innerHTML =
-    '<button type="button" class="active" data-tool="cursor" title="Selecionar">' + AI.SVG_CURSOR + '</button>' +
-    '<button type="button" data-tool="area" title="Seleção por área">' + AI.SVG_AREA + '</button>' +
-    '<button type="button" data-tool="pencil" title="Lápis (lasso)">' + AI.SVG_PENCIL + '</button>';
+    '<button type="button" class="active" data-tool="cursor" title="' + AI.t('tool.cursor') + '">' + AI.SVG_CURSOR + '</button>' +
+    '<button type="button" data-tool="area" title="' + AI.t('tool.area') + '">' + AI.SVG_AREA + '</button>' +
+    '<button type="button" data-tool="pencil" title="' + AI.t('tool.pencil') + '">' + AI.SVG_PENCIL + '</button>';
   document.body.appendChild(AI.toolbar);
 
   AI.toolbar.querySelector('[data-tool="cursor"]').addEventListener('click', function(){ AI.setTool('cursor'); });
@@ -684,23 +1052,25 @@ AI.createUI = function(){
   AI.panel.id = 'ai-editor-panel';
   AI.panel.innerHTML =
     '<div style="display:flex;justify-content:space-between;align-items:center">' +
-      '<label id="ai-editor-label" style="margin:0">O que você quer mudar aqui?</label>' +
-      '<button id="ai-editor-close" type="button" style="background:none;border:none;color:#7e7e7e;font-size:18px;cursor:pointer;line-height:1;padding:0" aria-label="Fechar">×</button>' +
+      '<label id="ai-editor-label" style="margin:0">' + AI.t('panel.label.single') + '</label>' +
+      '<button id="ai-editor-close" type="button" style="background:none;border:none;color:#7e7e7e;font-size:18px;cursor:pointer;line-height:1;padding:0" aria-label="' + AI.t('panel.close') + '">×</button>' +
     '</div>' +
-    '<textarea id="ai-editor-instruction" rows="3" placeholder="Ex: troque este título, mude a cor do botão..."></textarea>' +
+    '<textarea id="ai-editor-instruction" rows="3" placeholder="' + AI.t('panel.placeholder') + '"></textarea>' +
     '<div class="actions">' +
-      '<button class="btn-apply" id="ai-editor-apply" type="button">Alterar</button>' +
-      '<button class="btn-save" id="ai-editor-save" type="button">Salvar</button>' +
-      '<button class="btn-undo" id="ai-editor-undo" type="button" title="Desfazer (Ctrl+Z)">↩</button>' +
+      '<button class="btn-apply" id="ai-editor-apply" type="button">' + AI.t('panel.apply') + '</button>' +
+      '<button class="btn-save" id="ai-editor-save" type="button">' + AI.t('panel.save') + '</button>' +
+      '<button class="btn-undo" id="ai-editor-undo" type="button" title="' + AI.t('panel.undo') + '" disabled>↩</button>' +
+      '<button class="btn-undo" id="ai-editor-redo" type="button" title="' + AI.t('panel.redo') + '" disabled>↪</button>' +
     '</div>' +
-    '<button class="btn-design" id="ai-editor-design" type="button">📖 Ver DESIGN.md</button>' +
+    '<button class="btn-design" id="ai-editor-design" type="button">' + AI.t('panel.design') + '</button>' +
     '<div class="status" id="ai-editor-status"></div>';
   document.body.appendChild(AI.panel);
 
   document.getElementById('ai-editor-close').addEventListener('click', AI.exitSelection);
-  document.getElementById('ai-editor-apply').addEventListener('click', AI.applyWithAI);
+  document.getElementById('ai-editor-apply').addEventListener('click', function(){ AI.applyWithAI(); });
   document.getElementById('ai-editor-save').addEventListener('click', AI.saveToFile);
   document.getElementById('ai-editor-undo').addEventListener('click', AI.undoLast);
+  document.getElementById('ai-editor-redo').addEventListener('click', AI.redoLast);
   document.getElementById('ai-editor-design').addEventListener('click', AI.showDesignModal);
   document.getElementById('ai-design-close').addEventListener('click', AI.hideDesignModal);
   AI.designOverlay.addEventListener('click', function(e){ if (e.target === AI.designOverlay) AI.hideDesignModal(); });
@@ -766,6 +1136,10 @@ AI.init = function(options){
 
   AI.apiBase = options.apiBase || '/api';
   AI.apiToken = options.apiToken || '';
+  AI.locale = AI.resolveLocale(options.locale);
+  if (typeof options.maxHtmlSize === 'number') AI.maxHtmlSize = options.maxHtmlSize;
+  AI.onAfterApply = typeof options.onAfterApply === 'function' ? options.onAfterApply : null;
+  AI.onAfterUndo = typeof options.onAfterUndo === 'function' ? options.onAfterUndo : null;
 
   if (options.cssInject !== false){
     AI._injectCSS(options.cssUrl);
@@ -790,11 +1164,15 @@ AI.destroy = function(){
   AI.active = false;
   AI.selectedEls = [];
   AI.undoStack = [];
+  AI.redoStack = [];
+  AI.patches = [];
+  AI.changes = [];
   AI.pending = false;
 };
 
 
 // --- index.js ---
+
 
 
 

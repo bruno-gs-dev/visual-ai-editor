@@ -1,38 +1,49 @@
 /**
  * visual-ai-editor — programmatic server entry
  *
- * Exports startServer({ port, envPath, designMdPath, indexHtmlPath, staticDir,
- * apiToken, allowUnsafeProduction, silent })
+ * Exports startServer(options) / buildApp(options). Options:
  *
- *   - Reads .env from envPath (default: <cwd>/.env)
- *   - Mounts Express with /api/edit, /api/design, /api/save
- *   - Returns the express instance (so callers can also .listen themselves)
- *   - By default, also calls app.listen(port) unless options.silent === true
+ *   port                 number   port to listen on (default: PORT env or 3000)
+ *   envPath              string   .env file to load (AI_API_KEY / GROQ_API_KEY, ...)
+ *   designMdPath         string   default <cwd>/DESIGN.md
+ *   indexHtmlPath        string   fallback save target, default <cwd>/index.html
+ *   staticDir            string   directory served as static files, default cwd
+ *   apiToken             string   shared secret for /api/edit, /api/save, /api/handoff
+ *   allowUnsafeProduction boolean bypass the NODE_ENV=production safety check
+ *   silent               boolean  build the app but don't listen / don't log
+ *   locale               string   'en' (default) or 'pt-BR' — user-facing messages
+ *   backup               boolean  write a backup before each save (default: true)
+ *   maxHtmlBytes         number   reject /api/edit selections larger than this (default 200000)
+ *   ai                   object   { endpoint, model, apiKey, jsonMode, temperature }
+ *                                 any OpenAI-compatible chat-completions API works
+ *                                 (Groq, OpenAI, OpenRouter, Ollama, LM Studio, ...)
  *
- * This lets consumers do:
- *   const { startServer } = require('visual-ai-editor/server');
- *   startServer({ port: 3000 });
- *
- * without ever copying server.js.
+ * Environment fallbacks for the provider:
+ *   AI_ENDPOINT / AI_MODEL / AI_API_KEY   (preferred, provider-agnostic)
+ *   GROQ_MODEL / GROQ_API_KEY             (legacy, still honored)
  *
  * SECURITY NOTE: this is a development/staging tool by default — it serves
- * your whole project directory over HTTP and its /api/edit and /api/save
- * endpoints are unauthenticated unless you set `apiToken`. See the "Security
- * & production" section in README.md before exposing this publicly.
+ * your project directory over HTTP and its write endpoints are unauthenticated
+ * unless you set `apiToken`. See "Security & production" in README.md.
  */
 
 var path = require('path');
 var fs = require('fs');
 var express = require('express');
+var tokens = require('../lib/design-tokens.js');
+var patchLib = require('../lib/patch.js');
+var serverMessages = require('../lib/server-messages.js');
 
-var DEFAULT_PORT = parseInt(process.env.PORT, 10) || 3000;
-var DEFAULT_MODEL = process.env.GROQ_MODEL || 'llama-3.3-70b-versatile';
-var GROQ_ENDPOINT = 'https://api.groq.com/openai/v1/chat/completions';
+var DEFAULT_ENDPOINT = 'https://api.groq.com/openai/v1/chat/completions';
+var DEFAULT_MODEL = 'llama-3.3-70b-versatile';
+var MAX_CSS_CONTEXT = 10000;
+var MAX_HISTORY_FILES = 100;
 
 // Blocked regardless of staticDir — defense-in-depth against the most common
 // secret-leak vectors (dotfiles like .env are already blocked by express.static's
 // default `dotfiles: 'ignore'`, but node_modules/ and lockfiles are not).
-var SENSITIVE_PATH_RE = /(^|[\\/])(\.git|\.svn|\.hg|node_modules|\.env(\..*)?|\.npmrc|\.npmignore|package(-lock)?\.json|yarn\.lock|pnpm-lock\.yaml|\.ssh|\.aws)([\\/]|$)/i;
+// `.ai-editor/` holds save backups + agent handoff manifests — never serve it.
+var SENSITIVE_PATH_RE = /(^|[\\/])(\.git|\.svn|\.hg|\.ai-editor|node_modules|\.env(\..*)?|\.npmrc|\.npmignore|package(-lock)?\.json|yarn\.lock|pnpm-lock\.yaml|\.ssh|\.aws)([\\/]|$)/i;
 
 // Explicit exception: this package's own public dist/ assets live under
 // node_modules/visual-ai-editor/dist — the editor's own bundle/CSS must stay
@@ -40,7 +51,6 @@ var SENSITIVE_PATH_RE = /(^|[\\/])(\.git|\.svn|\.hg|node_modules|\.env(\..*)?|\.
 var OWN_DIST_ALLOW_RE = /(^|[\\/])node_modules[\\/]visual-ai-editor[\\/]dist[\\/]/i;
 
 function tryLoadDotenv(envPath){
-  // Lazy-require so consumers who don't need .env don't pay the cost.
   try {
     var dotenv = require('dotenv');
     dotenv.config({ path: envPath });
@@ -50,177 +60,449 @@ function tryLoadDotenv(envPath){
 }
 
 function stripCodeFence(text){
-  var trimmed = text.trim();
+  var trimmed = String(text || '').trim();
   var fence = trimmed.match(/^```[a-zA-Z]*\n([\s\S]*?)\n```$/);
   return fence ? fence[1].trim() : trimmed;
 }
 
-function requireApiToken(token){
+function requireApiToken(token, t){
   return function (req, res, next){
     if (!token) return next();
     var header = req.get('authorization') || '';
     var bearer = header.replace(/^Bearer\s+/i, '');
     var provided = bearer || req.get('x-ai-editor-token') || '';
     if (provided !== token){
-      return res.status(401).json({ error: 'Token inválido ou ausente. Envie "Authorization: Bearer <token>".' });
+      return res.status(401).json({ error: t('auth.invalid') });
     }
     next();
   };
 }
 
-function assertProductionSafe(options){
+function assertProductionSafe(options, t){
   if (process.env.NODE_ENV !== 'production') return;
   if (options.apiToken) return;
   if (options.allowUnsafeProduction === true) return;
-  throw new Error(
-    '[ai-editor] Recusando iniciar em produção (NODE_ENV=production) sem "apiToken".\n' +
-    'Este servidor expõe endpoints de edição por IA sem autenticação por padrão — ' +
-    'rodar isso publicamente sem proteção é inseguro (qualquer um pode consumir sua ' +
-    'chave da Groq via /api/edit ou sobrescrever seu HTML via /api/save).\n' +
-    'Defina options.apiToken (um segredo que só seu frontend conhece), ou passe ' +
-    'options.allowUnsafeProduction: true se você já tem autenticação em outra camada ' +
-    '(reverse proxy, VPN, etc.) e entende o risco.'
-  );
+  throw new Error(t('production.refuse'));
+}
+
+/** Provider config resolved lazily so envPath-loaded vars are honored. */
+function resolveProvider(options){
+  var ai = options.ai || {};
+  return {
+    endpoint: ai.endpoint || process.env.AI_ENDPOINT || DEFAULT_ENDPOINT,
+    model: ai.model || process.env.AI_MODEL || process.env.GROQ_MODEL || DEFAULT_MODEL,
+    apiKey: ai.apiKey || process.env.AI_API_KEY || process.env.GROQ_API_KEY || '',
+    jsonMode: ai.jsonMode !== false,
+    temperature: typeof ai.temperature === 'number' ? ai.temperature : 0.2
+  };
+}
+
+/** DESIGN.md reader with mtime-based cache — edits to the file are picked up live. */
+function designMdReader(designMdPath){
+  var cache = { mtime: 0, md: '', exists: false, palette: new Set() };
+  return function read(){
+    try {
+      var stat = fs.statSync(designMdPath);
+      if (stat.mtimeMs !== cache.mtime){
+        cache.md = fs.readFileSync(designMdPath, 'utf8');
+        cache.mtime = stat.mtimeMs;
+        cache.exists = true;
+        cache.palette = tokens.extractPalette(cache.md);
+      }
+    } catch (e) {
+      cache.md = '';
+      cache.exists = false;
+      cache.palette = new Set();
+    }
+    return cache;
+  };
+}
+
+/**
+ * Resolve the browser pathname of the page being edited to a writable file
+ * inside staticDir. Rejects traversal and dot-segments; returns null when the
+ * path is invalid, or `fallback` when no page was provided / no file matches.
+ */
+function resolvePageFile(staticDir, page, fallback){
+  if (!page || typeof page !== 'string') return fallback;
+  var p = page.split('?')[0].split('#')[0];
+  try { p = decodeURIComponent(p); } catch (e) { return null; }
+  p = p.replace(/\\/g, '/');
+  if (p.indexOf('\0') !== -1) return null;
+
+  var segs = p.split('/').filter(Boolean);
+  for (var i = 0; i < segs.length; i++){
+    if (segs[i] === '..' || segs[i].charAt(0) === '.') return null;
+  }
+
+  var rel = segs.join('/');
+  var candidates;
+  if (!rel){
+    candidates = ['index.html'];
+  } else if (/\.html?$/i.test(rel)){
+    candidates = [rel];
+  } else {
+    candidates = [rel + '.html', rel + '/index.html'];
+  }
+
+  var rootResolved = path.resolve(staticDir);
+  for (var j = 0; j < candidates.length; j++){
+    var full = path.resolve(staticDir, candidates[j]);
+    if (full !== rootResolved && full.indexOf(rootResolved + path.sep) !== 0) return null;
+    if (fs.existsSync(full)) return full;
+  }
+  return fallback;
+}
+
+/** Copy targetFile into <staticDir>/.ai-editor/history/ before overwriting. */
+function backupFile(staticDir, targetFile){
+  if (!fs.existsSync(targetFile)) return null;
+  var historyDir = path.join(staticDir, '.ai-editor', 'history');
+  fs.mkdirSync(historyDir, { recursive: true });
+
+  var stamp = new Date().toISOString().replace(/[:.]/g, '-');
+  var backupPath = path.join(historyDir, path.basename(targetFile) + '.' + stamp + '.bak.html');
+  fs.copyFileSync(targetFile, backupPath);
+
+  // Keep history bounded — drop the oldest files beyond MAX_HISTORY_FILES.
+  try {
+    var entries = fs.readdirSync(historyDir).sort();
+    while (entries.length > MAX_HISTORY_FILES){
+      fs.unlinkSync(path.join(historyDir, entries.shift()));
+    }
+  } catch (e) { /* best effort */ }
+
+  return backupPath;
+}
+
+function buildEditPrompts(params){
+  var designSection = params.designMd
+    ? '\n\nREFERENCE DESIGN SYSTEM (follow it strictly):\n' + params.designMd
+    : '';
+
+  var cssSection = params.css
+    ? '\n\nRELEVANT CSS RULES currently applying to the selection (so you know what existing classes do):\n' + params.css
+    : '';
+
+  var warnLanguage = serverMessages.resolveLocale(params.locale) === 'pt-BR'
+    ? 'Brazilian Portuguese'
+    : 'English';
+
+  var systemPrompt =
+    'You are an HTML editor that strictly follows the design system provided below.' +
+    designSection + cssSection + '\n\n' +
+    'RULES:\n' +
+    '- You receive an HTML fragment and a user instruction to edit it.\n' +
+    '- Respond ONLY with a single JSON object, no markdown fences, in one of these two shapes:\n' +
+    '    {"html": "<the updated HTML fragment>"}\n' +
+    '    {"warn": "<short explanation of why the request conflicts with the design system>"}\n' +
+    '- Keep the same root tag and outer structure of the fragment.\n' +
+    '- Reuse existing CSS classes whenever it makes sense. Do not invent new classes unless truly necessary.\n' +
+    '- Use ONLY colors, spacing and typography defined in the design system when one is provided.\n' +
+    '- Return {"warn": ...} when the user request clearly contradicts the design system ' +
+    '(e.g. off-palette colors, a border-radius that breaks the documented scale, broken type hierarchy) ' +
+    'AND force mode is not active. Write the warn message in ' + warnLanguage + '.\n' +
+    '- When force mode is active, apply the change regardless of design-system conflicts and return {"html": ...}.';
+
+  var userPrompt =
+    (params.force ? '[FORCE MODE] The user wants this change applied even if it conflicts with the design system.\n\n' : '') +
+    'Approximate selector of the element: ' + params.selector + '\n\n' +
+    'INSTRUCTION: ' + params.instruction + '\n\n' +
+    'ORIGINAL HTML FRAGMENT:\n' + params.html;
+
+  return { system: systemPrompt, user: userPrompt };
+}
+
+/** Parse the model response into { html } or { warn } with legacy fallbacks. */
+function parseModelResponse(content){
+  var text = stripCodeFence(content);
+  try {
+    var parsed = JSON.parse(text);
+    if (parsed && typeof parsed === 'object'){
+      if (typeof parsed.warn === 'string') return { warn: parsed.warn };
+      if (typeof parsed.html === 'string') return { html: parsed.html.trim() };
+    }
+  } catch (e) { /* not JSON — legacy plain-HTML response */ }
+
+  if (text.charAt(0) === '{'){
+    // Looks like JSON but didn't parse / didn't match — try a warn extraction
+    var m = text.match(/"warn"\s*:\s*"((?:[^"\\]|\\.)*)"/);
+    if (m) return { warn: m[1].replace(/\\"/g, '"') };
+  }
+  return { html: text };
+}
+
+async function callProvider(provider, prompts, useJsonMode){
+  var body = {
+    model: provider.model,
+    temperature: provider.temperature,
+    messages: [
+      { role: 'system', content: prompts.system },
+      { role: 'user', content: prompts.user }
+    ]
+  };
+  if (useJsonMode) body.response_format = { type: 'json_object' };
+
+  var headers = { 'Content-Type': 'application/json' };
+  if (provider.apiKey) headers['Authorization'] = 'Bearer ' + provider.apiKey;
+
+  var apiRes = await fetch(provider.endpoint, {
+    method: 'POST',
+    headers: headers,
+    body: JSON.stringify(body)
+  });
+  var data = await apiRes.json().catch(function(){ return {}; });
+  return { res: apiRes, data: data };
 }
 
 function buildApp(options){
   options = options || {};
-  assertProductionSafe(options);
+  var t = serverMessages.msg(options.locale);
+  assertProductionSafe(options, t);
+
   var designMdPath = options.designMdPath || path.join(process.cwd(), 'DESIGN.md');
   var indexHtmlPath = options.indexHtmlPath || path.join(process.cwd(), 'index.html');
   var staticDir = options.staticDir || process.cwd();
+  var maxHtmlBytes = typeof options.maxHtmlBytes === 'number' ? options.maxHtmlBytes : 200000;
+  var readDesign = designMdReader(designMdPath);
 
-  var DESIGN_MD = '';
-  var DESIGN_MD_EXISTS = false;
-  try {
-    DESIGN_MD = fs.readFileSync(designMdPath, 'utf8');
-    DESIGN_MD_EXISTS = true;
-    if (!options.silent) console.log('[ai-editor] DESIGN.md carregado (' + DESIGN_MD.length + ' caracteres).');
-  } catch (e) {
-    if (!options.silent){
-      console.warn('[ai-editor] DESIGN.md não encontrado em ' + designMdPath + '. A IA editará sem referência de design.');
-      console.warn('[ai-editor] Rode "npx visual-ai-editor design:init" para gerar um prompt guiado e criar um.');
+  var initial = readDesign();
+  if (!options.silent){
+    if (initial.exists){
+      console.log(t('log.design-loaded', { chars: initial.md.length, palette: initial.palette.size }));
+    } else {
+      console.warn(t('log.design-missing', { path: designMdPath }));
+      console.warn(t('log.design-hint'));
+    }
+    if (!options.apiToken){
+      console.warn(t('log.no-token'));
+      console.warn(t('log.no-token-hint'));
     }
   }
 
-  if (!options.silent && !options.apiToken){
-    console.warn('[ai-editor] Rodando sem "apiToken" — /api/edit e /api/save aceitam qualquer requisição.');
-    console.warn('[ai-editor] Ok para uso local/dev. Para produção, defina options.apiToken (veja README).');
-  }
-
   var app = express();
-  app.use(express.json({ limit: '2mb' }));
+  app.use(express.json({ limit: '4mb' }));
 
   // Block sensitive paths regardless of where staticDir points (defense in depth),
-  // except this package's own public dist/ assets (needed for the editor itself
-  // to load when consumers import it straight from node_modules).
+  // except this package's own public dist/ assets.
   app.use(function (req, res, next){
     if (OWN_DIST_ALLOW_RE.test(req.path)) return next();
     if (SENSITIVE_PATH_RE.test(req.path)) return res.status(404).end();
     next();
   });
 
-  // Serve the consumer's project directory as static files (so the editor UI
-  // in index.html can fetch /api/* from the same origin). Defaults to cwd —
-  // pass `staticDir` to narrow this to a public/ folder in production.
   app.use(express.static(staticDir));
 
-  var apiAuth = requireApiToken(options.apiToken);
+  var apiAuth = requireApiToken(options.apiToken, t);
 
   app.post('/api/edit', apiAuth, async function (req, res){
-    var html = req.body && req.body.html;
-    var instruction = req.body && req.body.instruction;
-    var selector = (req.body && req.body.selector) || '';
-    var force = !!(req.body && req.body.force);
+    var body = req.body || {};
+    var html = body.html;
+    var instruction = body.instruction;
+    var selector = body.selector || '';
+    var force = !!body.force;
+    var css = typeof body.css === 'string' ? body.css.slice(0, MAX_CSS_CONTEXT) : '';
 
     if (!html || !instruction){
-      return res.status(400).json({ error: 'Faltam "html" ou "instruction" no corpo da requisição.' });
+      return res.status(400).json({ error: t('edit.missing-fields') });
     }
-    if (!process.env.GROQ_API_KEY){
-      return res.status(500).json({ error: 'Servidor sem GROQ_API_KEY configurada (.env).' });
+    if (html.length > maxHtmlBytes){
+      return res.status(413).json({ error: t('edit.too-large', { size: html.length, limit: maxHtmlBytes }) });
     }
 
-    var designSection = DESIGN_MD
-      ? '\n\nDESIGN SYSTEM DE REFERÊNCIA (siga rigorosamente):\n' + DESIGN_MD
-      : '';
+    var provider = resolveProvider(options);
+    if (!provider.apiKey){
+      return res.status(500).json({ error: t('edit.no-api-key') });
+    }
 
-    var systemPrompt =
-      'Você é um editor de HTML que segue estritamente o design system fornecido abaixo.' + designSection + '\n\n' +
-      'REGRAS:\n' +
-      '- Você recebe um trecho de HTML e uma instrução do usuário para editar.\n' +
-      '- Responda APENAS com o HTML atualizado do trecho, mantendo a mesma tag raiz e estrutura externa.\n' +
-      '- Reutilize classes CSS já existentes quando fizer sentido. Não invente novas classes a menos que seja realmente necessário.\n' +
-      '- NUNCA inclua explicações, comentários ou blocos de markdown — apenas HTML puro.\n' +
-      '- SE o pedido do usuário contradiz claramente o design system (ex: pedir border-radius grande quando o design exige 0px, ' +
-      'ou usar cores fora da paleta, ou quebrar hierarquia tipográfica), e a instrução NÃO veio com force=true, ' +
-      'responda APENAS com um JSON no formato: {"warn":"descreva brevemente por que o pedido conflita com o design system"}\n' +
-      '- SE force=true estiver presente, aplique a alteração independentemente de conflitos com o design system.';
-
-    var userPrompt =
-      (force ? '[FORÇADO] O usuário quer aplicar esta alteração mesmo conflitando com o design.\n\n' : '') +
-      'Seletor aproximado do elemento: ' + selector + '\n\n' +
-      'INSTRUÇÃO: ' + instruction + '\n\n' +
-      'HTML ORIGINAL DO TRECHO:\n' + html;
+    var design = readDesign();
+    var prompts = buildEditPrompts({
+      designMd: design.md,
+      css: css,
+      selector: selector,
+      instruction: instruction,
+      html: html,
+      force: force,
+      locale: options.locale
+    });
 
     try {
-      var apiRes = await fetch(GROQ_ENDPOINT, {
-        method: 'POST',
-        headers: {
-          'Authorization': 'Bearer ' + process.env.GROQ_API_KEY,
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({
-          model: DEFAULT_MODEL,
-          temperature: 0.2,
-          messages: [
-            { role: 'system', content: systemPrompt },
-            { role: 'user', content: userPrompt }
-          ]
-        })
-      });
+      var attempt = await callProvider(provider, prompts, provider.jsonMode);
 
-      var data = await apiRes.json();
-      if (!apiRes.ok){
-        if (apiRes.status === 429){
-          var msg = (data.error && data.error.message) || '';
-          var match = msg.match(/try again in ([\d.]+)s/);
-          var retryAfter = match ? parseFloat(match[1]) : 10;
-          return res.status(429).json({ error: 'Rate limit atingido. Aguarde antes de tentar novamente.', retryAfter: retryAfter });
+      // Some OpenAI-compatible servers reject response_format — retry without it.
+      if (!attempt.res.ok && attempt.res.status === 400 && provider.jsonMode){
+        var errMsg = (attempt.data.error && attempt.data.error.message) || '';
+        if (/response_format|json_object/i.test(errMsg)){
+          attempt = await callProvider(provider, prompts, false);
         }
-        throw new Error((data.error && data.error.message) || 'Erro ao chamar a API da Groq.');
       }
 
-      var text = stripCodeFence(data.choices && data.choices[0] && data.choices[0].message && data.choices[0].message.content || '');
-      var trimmed = text.trim();
-
-      if (trimmed.charAt(0) === '{'){
-        try {
-          var parsed = JSON.parse(trimmed);
-          if (parsed.warn) return res.json({ warn: parsed.warn });
-        } catch (e) { /* não era JSON, tratar como HTML */ }
+      if (!attempt.res.ok){
+        if (attempt.res.status === 429){
+          var msg429 = (attempt.data.error && attempt.data.error.message) || '';
+          var match = msg429.match(/try again in ([\d.]+)s/);
+          var retryAfterHeader = parseFloat(attempt.res.headers.get('retry-after'));
+          var retryAfter = match ? parseFloat(match[1]) : (retryAfterHeader || 10);
+          return res.status(429).json({ error: t('edit.rate-limit'), retryAfter: retryAfter });
+        }
+        throw new Error((attempt.data.error && attempt.data.error.message) || t('edit.api-error'));
       }
 
-      res.json({ html: trimmed });
+      var content = attempt.data.choices && attempt.data.choices[0] &&
+        attempt.data.choices[0].message && attempt.data.choices[0].message.content || '';
+      var result = parseModelResponse(content);
+
+      if (result.warn) return res.json({ warn: result.warn });
+
+      // Deterministic palette enforcement — don't just trust the model.
+      if (!force && design.palette.size > 0){
+        var violations = tokens.findViolations(result.html, html, design.palette);
+        if (violations.length){
+          return res.json({
+            warn: t('edit.off-palette', { colors: violations.join(', ') }),
+            violations: violations,
+            html: result.html // client can apply this directly on "force" — zero extra tokens
+          });
+        }
+      }
+
+      res.json({ html: result.html });
     } catch (err) {
-      console.error('Erro ao chamar a API da Groq:', err);
-      res.status(500).json({ error: err.message || 'Erro ao chamar a API da Groq.' });
+      console.error('[ai-editor] /api/edit error:', err);
+      res.status(500).json({ error: err.message || t('edit.api-error') });
     }
   });
 
   app.get('/api/design', function (req, res){
-    res.json({ md: DESIGN_MD, exists: DESIGN_MD_EXISTS });
+    var design = readDesign();
+    res.json({
+      md: design.md,
+      exists: design.exists,
+      palette: Array.from(design.palette)
+    });
   });
 
+  /**
+   * POST /api/save
+   * Body: { html?, page?, patches? }
+   *   - patches: [{ before, after }] — surgical replacements against the
+   *     source file (preserves formatting; small git diffs).
+   *   - html: full serialized page — used when there are no patches, or as a
+   *     fallback when a patch can't be located in the source.
+   *   - page: browser pathname of the page being edited (multi-page support);
+   *     resolved safely inside staticDir. Defaults to indexHtmlPath.
+   */
   app.post('/api/save', apiAuth, function (req, res){
-    var html = req.body && req.body.html;
-    if (!html) return res.status(400).json({ error: 'Faltando "html" no corpo da requisição.' });
-    fs.writeFile(indexHtmlPath, html, 'utf8', function (err){
-      if (err){
-        console.error('Erro ao salvar index.html:', err);
-        return res.status(500).json({ error: 'Erro ao salvar o arquivo: ' + err.message });
+    var body = req.body || {};
+    var html = body.html;
+    var patches = Array.isArray(body.patches) ? body.patches : [];
+
+    if (!html && !patches.length){
+      return res.status(400).json({ error: t('save.missing-body') });
+    }
+
+    var target = resolvePageFile(staticDir, body.page, indexHtmlPath);
+    if (!target){
+      return res.status(400).json({ error: t('save.invalid-page') });
+    }
+
+    var backupPath = null;
+    if (options.backup !== false){
+      try { backupPath = backupFile(staticDir, target); }
+      catch (e) { console.warn('[ai-editor] backup failed (non-critical):', e.message); }
+    }
+
+    function respondWrite(content, mode, extra){
+      fs.writeFile(target, content, 'utf8', function (err){
+        if (err){
+          console.error('[ai-editor] save error:', err);
+          return res.status(500).json({ error: t('save.write-error', { error: err.message }) });
+        }
+        var payload = { ok: true, path: target, mode: mode, backup: backupPath };
+        if (extra) Object.keys(extra).forEach(function(k){ payload[k] = extra[k]; });
+        res.json(payload);
+      });
+    }
+
+    if (patches.length){
+      var source;
+      try { source = fs.readFileSync(target, 'utf8'); }
+      catch (e) { source = null; }
+
+      if (source !== null){
+        var result = patchLib.applyPatches(source, patches);
+        if (result.failed.length === 0){
+          return respondWrite(result.source, 'patch', { applied: result.applied });
+        }
+        if (html){
+          // Some patches couldn't be located — fall back to the full snapshot.
+          return respondWrite(html, 'full', { applied: 0, failedPatches: result.failed });
+        }
+        return res.status(409).json({
+          error: t('save.patch-failed', { count: result.failed.length, path: target }),
+          failedPatches: result.failed
+        });
       }
-      res.json({ ok: true, path: indexHtmlPath });
-    });
+    }
+
+    respondWrite(html, 'full');
+  });
+
+  /**
+   * POST /api/handoff
+   * For framework pages (React/Vue/...) the live DOM edit can't be written
+   * back to a static file — instead we export a change manifest that an AI
+   * coding agent (Claude Code, Cursor, ...) applies to the real source.
+   * Body: { changes: [{ source, selector, instruction, before, after }] }
+   * Writes/appends <staticDir>/.ai-editor/pending-changes.md
+   */
+  app.post('/api/handoff', apiAuth, function (req, res){
+    var changes = req.body && req.body.changes;
+    if (!Array.isArray(changes) || !changes.length){
+      return res.status(400).json({ error: t('handoff.missing-changes') });
+    }
+
+    var dir = path.join(staticDir, '.ai-editor');
+    var file = path.join(dir, 'pending-changes.md');
+    try {
+      fs.mkdirSync(dir, { recursive: true });
+      var isNew = !fs.existsSync(file);
+      var out = [];
+      if (isNew){
+        out.push('# visual-ai-editor — pending changes');
+        out.push('');
+        out.push('Edits made visually in the browser that need to be applied to the real');
+        out.push('source files. Each entry lists the source location (when detected), the');
+        out.push('user instruction, and the before/after HTML of the rendered element.');
+        out.push('An AI coding agent should apply each change to the source (JSX/template/');
+        out.push('HTML), adapting the markup to the framework, then delete the entry.');
+        out.push('');
+      }
+      changes.forEach(function(change){
+        out.push('---');
+        out.push('');
+        out.push('## ' + new Date().toISOString() + ' — ' + (change.selector || 'element'));
+        out.push('');
+        out.push('- **Source**: ' + (change.source || '(not detected — locate by selector/markup)'));
+        out.push('- **Selector**: `' + (change.selector || '') + '`');
+        out.push('- **Instruction**: ' + (change.instruction || ''));
+        out.push('');
+        out.push('**Before (rendered):**');
+        out.push('```html');
+        out.push(change.before || '');
+        out.push('```');
+        out.push('');
+        out.push('**After (rendered):**');
+        out.push('```html');
+        out.push(change.after || '');
+        out.push('```');
+        out.push('');
+      });
+      fs.appendFileSync(file, out.join('\n'), 'utf8');
+      res.json({ ok: true, path: file, count: changes.length });
+    } catch (err) {
+      res.status(500).json({ error: t('save.write-error', { error: err.message }) });
+    }
   });
 
   return app;
@@ -230,13 +512,14 @@ function startServer(options){
   options = options || {};
   if (options.envPath) tryLoadDotenv(options.envPath);
 
-  var port = typeof options.port === 'number' ? options.port : DEFAULT_PORT;
+  var t = serverMessages.msg(options.locale);
+  var port = typeof options.port === 'number' ? options.port : (parseInt(process.env.PORT, 10) || 3000);
   var app = buildApp(options); // buildApp() also runs the production safety check
 
   if (options.silent) return { app: app, port: port };
 
   var server = app.listen(port, function (){
-    console.log('[ai-editor] server em http://localhost:' + port);
+    console.log(t('log.listening', { port: port }));
   });
   return { app: app, server: server, port: port };
 }
