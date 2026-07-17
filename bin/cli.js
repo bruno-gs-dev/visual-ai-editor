@@ -2,6 +2,9 @@
 /**
  * visual-ai-editor CLI
  *
+ *   npx visual-ai-editor [start]        — zero-config: create .env on first run, then serve
+ *                                         the project with the editor auto-injected
+ *                                         (flags: --port <n>, --no-inject, --no-open)
  *   npx visual-ai-editor design:check   — locate DESIGN.md and report section coverage
  *   npx visual-ai-editor design:init    — write DESIGN.prompt.md (guided prompt for an AI agent)
  *   npx visual-ai-editor design:lint    — find off-palette colors in project CSS/HTML/JS files
@@ -161,19 +164,92 @@ function cmdAgentsInit(){
   }
 }
 
+function openBrowser(url){
+  var spawn = require('child_process').spawn;
+  var cmd, args;
+  if (process.platform === 'win32'){ cmd = 'cmd'; args = ['/c', 'start', '', url]; }
+  else if (process.platform === 'darwin'){ cmd = 'open'; args = [url]; }
+  else { cmd = 'xdg-open'; args = [url]; }
+  try {
+    spawn(cmd, args, { detached: true, stdio: 'ignore' }).on('error', function(){}).unref();
+  } catch (e) { /* best effort — the URL is printed either way */ }
+}
+
+function cmdStart(argv){
+  var root = resolveProjectRoot();
+  var envInit = require('../lib/env-init.js');
+  var envPath = path.join(root, '.env');
+
+  var portFlagIdx = argv.indexOf('--port');
+  var portFlag = portFlagIdx !== -1 ? parseInt(argv[portFlagIdx + 1], 10) : NaN;
+  var noInject = argv.indexOf('--no-inject') !== -1;
+  var noOpen = argv.indexOf('--no-open') !== -1;
+
+  var created = envInit.ensureEnvFile(root);
+  var gi = envInit.ensureGitignore(root);
+  if (gi.action !== 'unchanged'){
+    console.log('[visual-ai-editor] .gitignore ' + (gi.action === 'created' ? 'criado' : 'atualizado') + ' — .env nunca deve ir para o git.');
+  }
+
+  try { require('dotenv').config({ path: envPath }); } catch (e) { /* env vars via OS */ }
+
+  var keyState = envInit.checkApiKey(process.env);
+
+  if (created.action === 'created'){
+    console.log('');
+    console.log('[visual-ai-editor] Criei ' + created.path);
+    console.log('');
+    console.log('  1. Abra o arquivo e cole sua chave em AI_API_KEY=');
+    console.log('     (qualquer provider compatível com OpenAI — o free tier da Groq');
+    console.log('      é o caminho mais rápido: https://console.groq.com)');
+    console.log('  2. Rode de novo:  npx visual-ai-editor start');
+    console.log('');
+    console.log('  Usando Ollama/LM Studio local? Descomente o AI_ENDPOINT correspondente');
+    console.log('  no .env — não precisa de chave.');
+    if (keyState.ok) console.log('\n  (Detectei uma chave no ambiente do sistema — subindo mesmo assim.)');
+    if (!keyState.ok){ process.exitCode = 1; return; }
+  } else if (!keyState.ok){
+    console.log('[visual-ai-editor] ' + envPath + ' existe, mas AI_API_KEY está vazia.');
+    console.log('Cole sua chave lá e rode de novo. (Ollama/LM Studio local dispensam chave —');
+    console.log('descomente o AI_ENDPOINT correspondente no .env.)');
+    process.exitCode = 1;
+    return;
+  }
+
+  var startServer = require('../server/index.js').startServer;
+  var result = startServer({
+    port: !isNaN(portFlag) ? portFlag : undefined,
+    envPath: envPath,
+    staticDir: root,
+    inject: !noInject
+  });
+
+  var url = 'http://localhost:' + result.port;
+  console.log('[visual-ai-editor] Editor no ar: ' + url);
+  if (!noInject) console.log('[visual-ai-editor] Toolbar injetada automaticamente em qualquer .html servido (desligue com --no-inject).');
+  if (!noOpen) openBrowser(url);
+}
+
 function printUsage(){
-  console.log('Uso: visual-ai-editor <comando>');
+  console.log('Uso: visual-ai-editor [comando]');
   console.log('');
   console.log('Comandos:');
+  console.log('  start          (padrão) Sobe o editor no diretório atual — cria .env na primeira vez');
+  console.log('                 Flags: --port <n>  --no-inject  --no-open');
   console.log('  design:check   Procura DESIGN.md no projeto e reporta cobertura das 11 seções');
   console.log('  design:init    Gera DESIGN.prompt.md — um prompt guiado para criar o DESIGN.md com IA');
   console.log('  design:lint    Procura cores fora da paleta do DESIGN.md em CSS/HTML/JS do projeto');
   console.log('  agents:init    Instala/atualiza AGENTS.md (normalmente feito automaticamente no install)');
+  console.log('  help           Mostra esta mensagem');
 }
 
 var command = process.argv[2];
 
 switch (command){
+  case undefined:
+  case 'start':
+    cmdStart(process.argv.slice(3));
+    break;
   case 'design:check':
     cmdDesignCheck();
     break;
@@ -186,7 +262,12 @@ switch (command){
   case 'agents:init':
     cmdAgentsInit();
     break;
+  case 'help':
+  case '--help':
+  case '-h':
+    printUsage();
+    break;
   default:
     printUsage();
-    process.exitCode = command ? 1 : 0;
+    process.exitCode = 1;
 }

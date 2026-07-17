@@ -10,18 +10,32 @@ debug it, or extend it without re-deriving its architecture from scratch.
 
 ### What it is, concretely
 
+- **Zero-config CLI** (`npx visual-ai-editor start`, or just
+  `npx visual-ai-editor`): the default way to run it. First run creates a
+  `.env` at the project root (the user pastes an API key there — the only
+  manual step) and ensures `.gitignore` covers it; subsequent runs boot the
+  server with the client **auto-injected into every served `.html` page** —
+  no start script, no HTML edits. Flags: `--port <n>`, `--no-inject`,
+  `--no-open`. Auto-injection is skipped for pages that already wire the
+  editor manually or carry `data-ai-editor="off"`; the injected script loads
+  the bundle from the server's stable virtual path
+  `/__ai-editor/ai-editor.esm.js`.
 - **Client** (`visual-ai-editor`, imported in the page): injects a floating
   toolbar + selection tools (click, area-drag, lasso) into the DOM. Selecting
   one or more elements opens a panel where the user types an instruction.
   `init({ apiBase, apiToken, cssInject, cssUrl, locale, maxHtmlSize,
   onAfterApply, onAfterUndo })` boots it; `destroy()` tears it down (call on
-  component unmount in React/Vue/Angular).
+  component unmount in React/Vue/Angular). With the zero-config CLI this
+  import happens automatically; manual wiring is only needed for framework
+  (React/Vue/Angular) pages or custom setups.
 - **Server** (`visual-ai-editor/server`, `require('visual-ai-editor/server')`):
   an Express app exposing four endpoints. `startServer({ port, envPath,
   designMdPath, indexHtmlPath, staticDir, apiToken, allowUnsafeProduction,
-  locale, backup, maxHtmlBytes, ai })` boots it in-process — most projects run
-  this from a small `start-*.js` script (see `start-ai-editor.js` at this
-  project's root, if present).
+  locale, backup, maxHtmlBytes, inject, ai })` boots it in-process — either
+  via the CLI above (which sets `inject: true`) or from a small `start-*.js`
+  script (see `start-ai-editor.js` at this project's root, if present).
+  Programmatic `startServer()` defaults to `inject: false` so existing
+  setups keep their exact behavior.
 
 ### The API contract
 

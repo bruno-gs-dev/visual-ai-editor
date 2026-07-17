@@ -20,9 +20,36 @@ That's the only install — markdown rendering for the DESIGN.md viewer
 server (`visual-ai-editor/server`) entry points ship with the package —
 nothing extra to install for either.
 
-## Plug & play (recommended)
+## Zero-config start (recommended)
 
-No more copying `server.js`, wiring `<link>`/`<script>` tags by hand, or juggling `express`/`dotenv` as separate installs — both now ship as real dependencies of this package.
+```bash
+npx visual-ai-editor start
+```
+
+First run creates a `.env` in your project root — open it, paste your API key
+into `AI_API_KEY=`, and run the same command again. That's the entire setup:
+
+- the server boots and serves your project's static files plus the `/api/*`
+  endpoints;
+- the editor toolbar is **auto-injected into every `.html` page served** — no
+  start script to write, no `<script>` tags to add;
+- `.gitignore` is created/updated so the `.env` (and your key) never reaches
+  git;
+- your browser opens on the served project.
+
+Flags: `--port <n>` (default 3000), `--no-inject` (serve without auto-injecting
+the client), `--no-open` (don't open the browser). Running the bare
+`npx visual-ai-editor` does the same as `start`.
+
+Auto-injection is skipped on any page that already loads the editor manually or
+has a `data-ai-editor="off"` attribute, so it never double-boots. Using a local
+model (Ollama / LM Studio)? Uncomment the matching `AI_ENDPOINT` line in the
+generated `.env` — no API key needed.
+
+### Manual wiring (start script + explicit script tag)
+
+Prefer explicit control, or need the server embedded in your own process?
+Everything the CLI does is available programmatically:
 
 **1. Create `start-ai-editor.js`** in your project root:
 
@@ -31,18 +58,23 @@ const { startServer } = require('visual-ai-editor/server');
 
 startServer({
   port: 3000,
-  envPath: require('path').join(__dirname, '.env') // AI_API_KEY=...
+  envPath: require('path').join(__dirname, '.env'), // AI_API_KEY=...
+  inject: true // optional — auto-inject the client like the CLI does (default: false)
 });
 ```
 
-**2. Add one line to your HTML** (before `</body>`):
+**2. Add one line to your HTML** (before `</body>` — skip if using `inject: true`):
 
 ```html
 <script type="module">
-  import { init } from './node_modules/visual-ai-editor/dist/ai-editor.esm.js';
+  import { init } from '/__ai-editor/ai-editor.esm.js';
   init({ apiBase: '/api' });
 </script>
 ```
+
+(The `/__ai-editor/` virtual path is served by the backend from this package's
+own `dist/` — the old `./node_modules/visual-ai-editor/dist/...` path also
+still works.)
 
 **3. Create `.env`** with your key:
 
@@ -58,7 +90,7 @@ AI_API_KEY=your_key_here
 node start-ai-editor.js
 ```
 
-That's it — the CSS is embedded in the bundle and injected automatically (no relative paths to break), and the backend runs in-process, serving your project's static files plus the `/api/*` endpoints.
+Either way, the CSS is embedded in the bundle and injected automatically (no relative paths to break), and the backend runs in-process, serving your project's static files plus the `/api/*` endpoints.
 
 ## Choosing an AI provider
 

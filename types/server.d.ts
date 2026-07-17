@@ -55,6 +55,14 @@ export interface ServerOptions {
   backup?: boolean;
   /** Reject /api/edit selections whose HTML exceeds this many bytes. Default: 200000 */
   maxHtmlBytes?: number;
+  /**
+   * Auto-inject the editor client (module script) into every .html page
+   * served from staticDir. Pages that already wire the editor by hand, or
+   * carry a data-ai-editor="off" attribute, are skipped. Default: false —
+   * the `npx visual-ai-editor start` CLI turns it on; programmatic
+   * consumers opt in explicitly.
+   */
+  inject?: boolean;
   /** LLM provider configuration. Any OpenAI-compatible chat-completions API works. */
   ai?: AIProviderOptions;
 }

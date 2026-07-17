@@ -1,5 +1,43 @@
 # Changelog
 
+## 1.6.0
+
+### Added
+- **Zero-config start: `npx visual-ai-editor start`** (bare
+  `npx visual-ai-editor` does the same). First run creates a `.env` from a
+  commented template (paste your key into `AI_API_KEY=` — the only manual
+  step) and makes sure `.gitignore` covers it; the next run boots the server
+  and opens the browser. Flags: `--port <n>`, `--no-inject`, `--no-open`.
+  Local endpoints (Ollama/LM Studio via `AI_ENDPOINT`) skip the key
+  requirement, matching the server's existing behavior.
+- **Client auto-injection (`inject` server option).** With `inject: true`,
+  every `.html` page served from `staticDir` gets the editor's module script
+  injected before `</body>` — no manual `<script>` wiring. Pages that
+  already load the editor, or carry `data-ai-editor="off"`, are skipped
+  deterministically; when the server has an `apiToken`, it's passed through
+  to `init()`. **Default is `false`** for programmatic
+  `startServer()`/`buildApp()` — only the CLI `start` path turns it on — so
+  existing setups keep their exact behavior.
+- **Stable bundle path `/__ai-editor/`.** The server now always serves this
+  package's own `dist/` at `/__ai-editor/` (e.g.
+  `/__ai-editor/ai-editor.esm.js`), independent of where the package
+  physically lives (local `node_modules`, npx cache, pnpm store). The old
+  `node_modules/visual-ai-editor/dist/` path still works.
+- `lib/env-init.js` + `templates/env.template`: reusable `.env`
+  bootstrap/validation logic (also the new single source of truth for the
+  "localhost endpoints don't need an API key" rule, previously private to
+  `server/index.js`).
+
+### Changed
+- Bare `npx visual-ai-editor` (no command) now runs `start` instead of
+  printing usage; `help`/`--help`/`-h` print usage explicitly.
+- `postinstall` now points at `npx visual-ai-editor start` as the next step.
+- `server/.env.example` updated to the provider-agnostic `AI_*` variables
+  (the legacy `GROQ_*` ones are still honored and still documented).
+- README's "Plug & play" section replaced by "Zero-config start"; the
+  start-script + script-tag flow moved to "Manual wiring" (still fully
+  supported, and required for framework pages).
+
 ## 1.5.0
 
 ### Added

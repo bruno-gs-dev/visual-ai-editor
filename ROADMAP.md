@@ -4,14 +4,19 @@ This file tracks in-progress and planned work across AI sessions. If you're an
 AI agent picking this up, read this whole file before touching code — it
 tells you what's shipped, what's mid-flight, and why decisions were made.
 
-## Status snapshot (last updated: session ending 2026-07-17, second pass)
+## Status snapshot (last updated: session ending 2026-07-17, third pass)
 
-- **Published on npm: 1.4.0.** Local working tree is at **1.5.0**, tested,
-  not yet committed/published as of this writing — that's the very next
-  step for whoever (or whichever session) picks this up, unless it's
-  already done by the time you're reading this (check `npm view
-  visual-ai-editor version` and `git log -1` in this repo to confirm before
-  redoing anything below).
+- **Published on npm: 1.5.0** (commit `8d2ad5f`, pushed to `origin/main`).
+  Local working tree is at **1.6.0** — zero-config start (`npx
+  visual-ai-editor start`, auto-generated `.env`, client auto-injection via
+  the server's `inject` option, stable `/__ai-editor/` bundle path). Tested
+  (51-test suite green + real E2E in a fresh empty project: pack → install →
+  first run creates `.env` → second run serves with the toolbar injected).
+  Publishing 1.6.0 is the next step — check `npm view visual-ai-editor
+  version` and `git log -1` before redoing anything.
+- Full spec for the 1.6.0 feature: `.specs/features/zero-config-start/spec.md`.
+  Brownfield codebase docs (stack, architecture, conventions, testing,
+  concerns): `.specs/codebase/`.
 - **Context**: this package started as a personal project (`smartvia` is the
   real-world test bed, a separate local project at `../smartvia`, consuming
   this package from npm — not a monorepo link). A full review identified it

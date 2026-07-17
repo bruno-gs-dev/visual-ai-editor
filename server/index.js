@@ -14,6 +14,9 @@
  *   locale               string   'en' (default) or 'pt-BR' — user-facing messages
  *   backup               boolean  write a backup before each save (default: true)
  *   maxHtmlBytes         number   reject /api/edit selections larger than this (default 200000)
+ *   inject               boolean  auto-inject the editor client into served .html
+ *                                 pages (default: false — the CLI `start` command
+ *                                 turns it on; programmatic consumers opt in)
  *   ai                   object   { endpoint, model, apiKey, jsonMode, temperature }
  *                                 any OpenAI-compatible chat-completions API works
  *                                 (Groq, OpenAI, OpenRouter, Ollama, LM Studio, ...)
@@ -33,6 +36,7 @@ var express = require('express');
 var tokens = require('../lib/design-tokens.js');
 var patchLib = require('../lib/patch.js');
 var serverMessages = require('../lib/server-messages.js');
+var isLocalEndpoint = require('../lib/env-init.js').isLocalEndpoint;
 
 var DEFAULT_ENDPOINT = 'https://api.groq.com/openai/v1/chat/completions';
 var DEFAULT_MODEL = 'llama-3.3-70b-versatile';
@@ -93,16 +97,6 @@ var PROVIDER_PRESETS = {
   ollama: { endpoint: 'http://localhost:11434/v1/chat/completions' },
   lmstudio: { endpoint: 'http://localhost:1234/v1/chat/completions' }
 };
-
-/** Local/loopback endpoints (Ollama, LM Studio, ...) don't need an API key. */
-function isLocalEndpoint(endpoint){
-  try {
-    var host = new URL(endpoint).hostname;
-    return host === 'localhost' || host === '127.0.0.1' || host === '::1' || host === '0.0.0.0';
-  } catch (e) {
-    return false;
-  }
-}
 
 /** Provider config resolved lazily so envPath-loaded vars are honored. */
 function resolveProvider(options){
@@ -197,6 +191,31 @@ function backupFile(staticDir, targetFile){
   } catch (e) { /* best effort */ }
 
   return backupPath;
+}
+
+// ---------------------------------------------------------------------------
+// Client auto-injection (zero-config mode)
+// ---------------------------------------------------------------------------
+
+// A page that already wires the editor by hand must not get a second copy.
+// Also honors an explicit opt-out attribute anywhere in the page.
+var INJECT_SKIP_RE = /ai-editor(\.esm)?(\.min)?\.js|AIEditor|__ai-editor\/|data-ai-editor="off"/;
+
+/**
+ * Inject the editor's module script before the closing </body> tag (or append
+ * to the end when there isn't one — fragment pages). Returns the HTML
+ * unchanged when the page already loads the editor or opted out.
+ */
+function injectClient(html, apiToken){
+  if (INJECT_SKIP_RE.test(html)) return html;
+  var initOpts = "{ apiBase: '/api'" + (apiToken ? ", apiToken: " + JSON.stringify(apiToken) : '') + " }";
+  var snippet = '<script type="module" data-ai-editor-injected>\n' +
+    "import { init } from '/__ai-editor/ai-editor.esm.js';\n" +
+    'init(' + initOpts + ');\n' +
+    '</script>\n';
+  var m = /<\/body\s*>/i.exec(html);
+  if (m) return html.slice(0, m.index) + snippet + html.slice(m.index);
+  return html + '\n' + snippet;
 }
 
 function buildEditPrompts(params){
@@ -317,6 +336,24 @@ function buildApp(options){
     if (SENSITIVE_PATH_RE.test(req.path)) return res.status(404).end();
     next();
   });
+
+  // The editor's own bundle at a stable virtual path, independent of where
+  // this package physically lives (local node_modules, npx cache, pnpm store).
+  // The node_modules/visual-ai-editor/dist path keeps working for manual
+  // wiring, but injected pages and new docs use this one.
+  app.use('/__ai-editor', express.static(path.join(__dirname, '..', 'dist')));
+
+  if (options.inject === true){
+    app.use(function (req, res, next){
+      if (req.method !== 'GET') return next();
+      var file = resolvePageFile(staticDir, req.path, null);
+      if (!file) return next();
+      fs.readFile(file, 'utf8', function (err, html){
+        if (err) return next();
+        res.type('html').send(injectClient(html, options.apiToken));
+      });
+    });
+  }
 
   app.use(express.static(staticDir));
 
