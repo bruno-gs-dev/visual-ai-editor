@@ -4,6 +4,8 @@ AI-powered visual HTML editor. Select any element on the page, describe what you
 
 Works everywhere: static HTML, React, Angular, Vue, or any framework.
 
+> **This is a development/staging tool by default.** It serves your project directory over HTTP and its API is unauthenticated unless you configure `apiToken`. Read [Security & production](#security--production) before deploying it anywhere reachable by the public internet.
+
 ## Install
 
 ```bash
@@ -150,6 +152,7 @@ Creates the editor UI and binds all event listeners.
 | Option | Type | Default | Description |
 |---|---|---|---|
 | `apiBase` | `string` | `'/api'` | Base URL for backend endpoints |
+| `apiToken` | `string` | none | Sent as `Authorization: Bearer <token>` on `/edit` and `/save`. Must match the server's `apiToken` (see [Security & production](#security--production)) |
 | `cssInject` | `boolean` | `true` | Auto-inject CSS into `<head>` |
 | `cssUrl` | `string` | `'dist/ai-editor.css'` | Custom CSS URL when injecting |
 
@@ -201,6 +204,9 @@ node start-ai-editor.js
 | `envPath` | `string` | none | Path to a `.env` file to load (`GROQ_API_KEY`, `GROQ_MODEL`) |
 | `designMdPath` | `string` | `<cwd>/DESIGN.md` | Where to read the design system reference from |
 | `indexHtmlPath` | `string` | `<cwd>/index.html` | Where `/api/save` writes the edited HTML |
+| `staticDir` | `string` | `process.cwd()` | Directory served as static files. Narrow this to a `public/`-style folder in production instead of your whole project root |
+| `apiToken` | `string` | none | If set, `/api/edit` and `/api/save` require `Authorization: Bearer <token>` (or an `X-AI-Editor-Token` header). Pass the same value to the client via `init({ apiToken })` |
+| `allowUnsafeProduction` | `boolean` | `false` | Bypasses the production safety check (see below) when you have auth at another layer (reverse proxy, VPN, etc.) |
 | `silent` | `boolean` | `false` | If `true`, builds the Express app but doesn't call `.listen()` — returns `{ app, port }` so you can mount it yourself |
 
 ### Setup (legacy — copy server.js)
@@ -213,6 +219,46 @@ cp node_modules/visual-ai-editor/server/.env.example ./.env
 # Edit .env and set GROQ_API_KEY=your_key_here
 node server.js
 ```
+
+## Security & production
+
+This tool is built for local development and internal/staging use — a designer or
+developer editing their own project on their own machine. It is **not** hardened
+to be exposed to the public internet as-is. Concretely:
+
+- **`/api/edit` and `/api/save` are unauthenticated by default.** Anyone who can
+  reach the server can burn through your Groq API quota via `/api/edit`, or
+  overwrite `indexHtmlPath` via `/api/save`. Set `apiToken` (server) + pass the
+  same value to `init({ apiToken })` (client) to require a bearer token on both
+  endpoints. This is a shared-secret check, not real user authentication — it
+  stops opportunistic/automated abuse, not a determined attacker who can read
+  your page's source (the token is visible in the client bundle you serve). For
+  real production protection, put this behind your own auth layer (session
+  check, reverse-proxy auth, VPN) and treat `apiToken` as a second layer, not
+  the only one.
+- **The static file server defaults to serving your whole `process.cwd()`.**
+  As of this version, `.git/`, `node_modules/`, `.env*`, lockfiles, `.ssh/`,
+  and `.aws/` are blocked outright (defense in depth — `.env` was already
+  blocked by Express's default dotfile handling, but `node_modules/` and
+  `package.json` were not, prior to this being fixed). Everything else under
+  `staticDir` is still served, because the editor needs to read/write your
+  actual project files. In production, set `staticDir` to a narrow `public/`
+  folder rather than your whole repo.
+- **`startServer()`/`buildApp()` refuse to start when `NODE_ENV=production` and
+  no `apiToken` is set** — you'll get a thrown error explaining why, instead of
+  a silently-exposed editor. Pass `allowUnsafeProduction: true` only if you've
+  already solved authentication at another layer and understand the tradeoff.
+- **The client-side toolbar has no visibility gate.** If you ship the `init()`
+  call in your production bundle, every visitor sees and can use the editor
+  UI (even if the backend correctly rejects their requests). Gate `init()`
+  behind an environment check or an authenticated route in your own app —
+  e.g. only call it when `process.env.NODE_ENV !== 'production'`, or behind
+  a feature flag / admin-only route.
+
+**Recommended pattern:** run this on a separate, non-public port/host during
+development or in a staging environment gated by your own auth (e.g. behind a
+VPN or an authenticated reverse proxy), with `apiToken` set as a second layer.
+Don't wire it into your public production bundle.
 
 ## CSS Variables
 

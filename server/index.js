@@ -1,7 +1,8 @@
 /**
  * visual-ai-editor — programmatic server entry
  *
- * Exports startServer({ port, envPath, designMdPath, indexHtmlPath, silent })
+ * Exports startServer({ port, envPath, designMdPath, indexHtmlPath, staticDir,
+ * apiToken, allowUnsafeProduction, silent })
  *
  *   - Reads .env from envPath (default: <cwd>/.env)
  *   - Mounts Express with /api/edit, /api/design, /api/save
@@ -13,6 +14,11 @@
  *   startServer({ port: 3000 });
  *
  * without ever copying server.js.
+ *
+ * SECURITY NOTE: this is a development/staging tool by default — it serves
+ * your whole project directory over HTTP and its /api/edit and /api/save
+ * endpoints are unauthenticated unless you set `apiToken`. See the "Security
+ * & production" section in README.md before exposing this publicly.
  */
 
 var path = require('path');
@@ -22,6 +28,16 @@ var express = require('express');
 var DEFAULT_PORT = parseInt(process.env.PORT, 10) || 3000;
 var DEFAULT_MODEL = process.env.GROQ_MODEL || 'llama-3.3-70b-versatile';
 var GROQ_ENDPOINT = 'https://api.groq.com/openai/v1/chat/completions';
+
+// Blocked regardless of staticDir — defense-in-depth against the most common
+// secret-leak vectors (dotfiles like .env are already blocked by express.static's
+// default `dotfiles: 'ignore'`, but node_modules/ and lockfiles are not).
+var SENSITIVE_PATH_RE = /(^|[\\/])(\.git|\.svn|\.hg|node_modules|\.env(\..*)?|\.npmrc|\.npmignore|package(-lock)?\.json|yarn\.lock|pnpm-lock\.yaml|\.ssh|\.aws)([\\/]|$)/i;
+
+// Explicit exception: this package's own public dist/ assets live under
+// node_modules/visual-ai-editor/dist — the editor's own bundle/CSS must stay
+// reachable, even though node_modules/ is blocked above.
+var OWN_DIST_ALLOW_RE = /(^|[\\/])node_modules[\\/]visual-ai-editor[\\/]dist[\\/]/i;
 
 function tryLoadDotenv(envPath){
   // Lazy-require so consumers who don't need .env don't pay the cost.
@@ -39,10 +55,40 @@ function stripCodeFence(text){
   return fence ? fence[1].trim() : trimmed;
 }
 
+function requireApiToken(token){
+  return function (req, res, next){
+    if (!token) return next();
+    var header = req.get('authorization') || '';
+    var bearer = header.replace(/^Bearer\s+/i, '');
+    var provided = bearer || req.get('x-ai-editor-token') || '';
+    if (provided !== token){
+      return res.status(401).json({ error: 'Token inválido ou ausente. Envie "Authorization: Bearer <token>".' });
+    }
+    next();
+  };
+}
+
+function assertProductionSafe(options){
+  if (process.env.NODE_ENV !== 'production') return;
+  if (options.apiToken) return;
+  if (options.allowUnsafeProduction === true) return;
+  throw new Error(
+    '[ai-editor] Recusando iniciar em produção (NODE_ENV=production) sem "apiToken".\n' +
+    'Este servidor expõe endpoints de edição por IA sem autenticação por padrão — ' +
+    'rodar isso publicamente sem proteção é inseguro (qualquer um pode consumir sua ' +
+    'chave da Groq via /api/edit ou sobrescrever seu HTML via /api/save).\n' +
+    'Defina options.apiToken (um segredo que só seu frontend conhece), ou passe ' +
+    'options.allowUnsafeProduction: true se você já tem autenticação em outra camada ' +
+    '(reverse proxy, VPN, etc.) e entende o risco.'
+  );
+}
+
 function buildApp(options){
   options = options || {};
+  assertProductionSafe(options);
   var designMdPath = options.designMdPath || path.join(process.cwd(), 'DESIGN.md');
   var indexHtmlPath = options.indexHtmlPath || path.join(process.cwd(), 'index.html');
+  var staticDir = options.staticDir || process.cwd();
 
   var DESIGN_MD = '';
   var DESIGN_MD_EXISTS = false;
@@ -57,14 +103,31 @@ function buildApp(options){
     }
   }
 
+  if (!options.silent && !options.apiToken){
+    console.warn('[ai-editor] Rodando sem "apiToken" — /api/edit e /api/save aceitam qualquer requisição.');
+    console.warn('[ai-editor] Ok para uso local/dev. Para produção, defina options.apiToken (veja README).');
+  }
+
   var app = express();
   app.use(express.json({ limit: '2mb' }));
 
-  // Serve the consumer's current working directory as static files
-  // (so the editor UI in index.html can fetch /api/* from the same origin).
-  app.use(express.static(process.cwd()));
+  // Block sensitive paths regardless of where staticDir points (defense in depth),
+  // except this package's own public dist/ assets (needed for the editor itself
+  // to load when consumers import it straight from node_modules).
+  app.use(function (req, res, next){
+    if (OWN_DIST_ALLOW_RE.test(req.path)) return next();
+    if (SENSITIVE_PATH_RE.test(req.path)) return res.status(404).end();
+    next();
+  });
 
-  app.post('/api/edit', async function (req, res){
+  // Serve the consumer's project directory as static files (so the editor UI
+  // in index.html can fetch /api/* from the same origin). Defaults to cwd —
+  // pass `staticDir` to narrow this to a public/ folder in production.
+  app.use(express.static(staticDir));
+
+  var apiAuth = requireApiToken(options.apiToken);
+
+  app.post('/api/edit', apiAuth, async function (req, res){
     var html = req.body && req.body.html;
     var instruction = req.body && req.body.instruction;
     var selector = (req.body && req.body.selector) || '';
@@ -148,7 +211,7 @@ function buildApp(options){
     res.json({ md: DESIGN_MD, exists: DESIGN_MD_EXISTS });
   });
 
-  app.post('/api/save', function (req, res){
+  app.post('/api/save', apiAuth, function (req, res){
     var html = req.body && req.body.html;
     if (!html) return res.status(400).json({ error: 'Faltando "html" no corpo da requisição.' });
     fs.writeFile(indexHtmlPath, html, 'utf8', function (err){
@@ -168,7 +231,7 @@ function startServer(options){
   if (options.envPath) tryLoadDotenv(options.envPath);
 
   var port = typeof options.port === 'number' ? options.port : DEFAULT_PORT;
-  var app = buildApp(options);
+  var app = buildApp(options); // buildApp() also runs the production safety check
 
   if (options.silent) return { app: app, port: port };
 

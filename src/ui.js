@@ -165,6 +165,7 @@ AI.init = function(options){
   if (AI._initialized) return;
 
   AI.apiBase = options.apiBase || '/api';
+  AI.apiToken = options.apiToken || '';
 
   if (options.cssInject !== false){
     AI._injectCSS(options.cssUrl);

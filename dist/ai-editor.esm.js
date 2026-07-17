@@ -23,9 +23,16 @@ export var AI = {
   undoStack: [],
 
   apiBase: '/api',
+  apiToken: '',
   _initialized: false,
   _eventCleanups: [],
   css: '',
+
+  authHeaders: function(extra){
+    var headers = extra || {};
+    if (AI.apiToken) headers['Authorization'] = 'Bearer ' + AI.apiToken;
+    return headers;
+  },
 
   SVG_NS: 'http://www.w3.org/2000/svg',
   SVG_CURSOR: '<svg viewBox="0 0 24 24"><path d="M5 3l14 8-6 2-3 6z"/></svg>',
@@ -432,7 +439,7 @@ AI.applyWithAI = function(force){
 
   fetch(AI.apiBase + '/edit', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: AI.authHeaders({ 'Content-Type': 'application/json' }),
     body: JSON.stringify({ html: html, instruction: instruction, selector: selector, force: !!force })
   })
     .then(function(r){
@@ -527,7 +534,7 @@ AI.saveToFile = function(){
 
   fetch(AI.apiBase + '/save', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: AI.authHeaders({ 'Content-Type': 'application/json' }),
     body: JSON.stringify({ html: fullHtml })
   })
     .then(function(r){ return r.json(); })
@@ -747,6 +754,7 @@ AI.init = function(options){
   if (AI._initialized) return;
 
   AI.apiBase = options.apiBase || '/api';
+  AI.apiToken = options.apiToken || '';
 
   if (options.cssInject !== false){
     AI._injectCSS(options.cssUrl);

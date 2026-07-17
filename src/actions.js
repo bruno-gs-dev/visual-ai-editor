@@ -93,7 +93,7 @@ AI.applyWithAI = function(force){
 
   fetch(AI.apiBase + '/edit', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: AI.authHeaders({ 'Content-Type': 'application/json' }),
     body: JSON.stringify({ html: html, instruction: instruction, selector: selector, force: !!force })
   })
     .then(function(r){
@@ -188,7 +188,7 @@ AI.saveToFile = function(){
 
   fetch(AI.apiBase + '/save', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: AI.authHeaders({ 'Content-Type': 'application/json' }),
     body: JSON.stringify({ html: fullHtml })
   })
     .then(function(r){ return r.json(); })
