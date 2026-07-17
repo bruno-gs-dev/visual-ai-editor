@@ -350,6 +350,17 @@ AI.showDesignModal = function(){
   fetch(AI.apiBase + '/design')
     .then(function(r){ return r.json(); })
     .then(function(data){
+      if (!data.exists){
+        content.innerHTML =
+          '<p>Este projeto ainda não tem um <code>DESIGN.md</code>.</p>' +
+          '<p>Sem ele, a IA edita sem referência de design — o que aumenta a chance ' +
+          'de inconsistência visual (cores, espaçamentos e componentes fora do padrão).</p>' +
+          '<p>Rode este comando no terminal do projeto para gerar um prompt guiado:</p>' +
+          '<pre>npx visual-ai-editor design:init</pre>' +
+          '<p>Depois cole o conteúdo gerado (<code>DESIGN.prompt.md</code>) no seu agente de IA ' +
+          '(Claude Code, Cursor, etc.) e siga as instruções para criar o <code>DESIGN.md</code>.</p>';
+        return;
+      }
       var md = data.md || '(DESIGN.md vazio)';
       content.innerHTML = typeof marked !== 'undefined' ? marked.parse(md) : '<pre>' + md + '</pre>';
     })

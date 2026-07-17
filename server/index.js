@@ -45,11 +45,16 @@ function buildApp(options){
   var indexHtmlPath = options.indexHtmlPath || path.join(process.cwd(), 'index.html');
 
   var DESIGN_MD = '';
+  var DESIGN_MD_EXISTS = false;
   try {
     DESIGN_MD = fs.readFileSync(designMdPath, 'utf8');
+    DESIGN_MD_EXISTS = true;
     if (!options.silent) console.log('[ai-editor] DESIGN.md carregado (' + DESIGN_MD.length + ' caracteres).');
   } catch (e) {
-    if (!options.silent) console.warn('[ai-editor] DESIGN.md não encontrado em ' + designMdPath + '. A IA editará sem referência de design.');
+    if (!options.silent){
+      console.warn('[ai-editor] DESIGN.md não encontrado em ' + designMdPath + '. A IA editará sem referência de design.');
+      console.warn('[ai-editor] Rode "npx visual-ai-editor design:init" para gerar um prompt guiado e criar um.');
+    }
   }
 
   var app = express();
@@ -140,7 +145,7 @@ function buildApp(options){
   });
 
   app.get('/api/design', function (req, res){
-    res.json({ md: DESIGN_MD });
+    res.json({ md: DESIGN_MD, exists: DESIGN_MD_EXISTS });
   });
 
   app.post('/api/save', function (req, res){

@@ -53,6 +53,38 @@ node start-ai-editor.js
 
 That's it — the CSS is embedded in the bundle and injected automatically (no relative paths to break), and the backend runs in-process, serving your project's static files plus the `/api/*` endpoints.
 
+## DESIGN.md — keep the AI on-brand
+
+`DESIGN.md` is what stops the AI from inventing colors, spacing, or components
+outside your design system. If your project doesn't have one yet, this package
+helps you create it, following the methodology from
+[camaraux.com.br/como-criar-aplicar-design-md-ia](https://camaraux.com.br/como-criar-aplicar-design-md-ia/).
+
+**On `npm install`**, a postinstall check looks for `DESIGN.md` in your project
+and prints a one-line nudge if it's missing — it never fails the install.
+
+```bash
+# Locate DESIGN.md and report which of the 11 recommended sections were found
+npx visual-ai-editor design:check
+
+# No DESIGN.md yet? Generate a guided prompt (DESIGN.prompt.md)
+npx visual-ai-editor design:init
+```
+
+`design:init` writes `DESIGN.prompt.md` to your project root. Paste it into
+Claude Code, Cursor, or any AI agent (`cat DESIGN.prompt.md | claude` works
+too) — it walks the agent through an interview (visual personality, references,
+product type, priorities) and then the 11-section structure (Overview,
+Principles, Colors, Typography, Spacing, Elevation, Layout, Components,
+Accessibility, AI Rules, Example Prompts) plus a validation checklist. Once
+`DESIGN.md` exists at your project root, the editor picks it up automatically
+— no configuration needed.
+
+If your npm setup requires approving install scripts (e.g. `npm audit
+signatures` / allow-scripts policies), the postinstall check is opt-in-safe:
+it never blocks or fails the install either way — worst case, you just don't
+get the one-line nudge and can run `design:check` manually.
+
 ## Quick Start (manual wiring)
 
 ### HTML (script tag)
