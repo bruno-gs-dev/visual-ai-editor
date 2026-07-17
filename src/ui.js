@@ -118,17 +118,32 @@ AI.createUI = function(){
 };
 
 AI._injectCSS = function(url){
-  if (document.getElementById('ai-editor-css')) return;
-  var link = document.createElement('link');
-  link.id = 'ai-editor-css';
-  link.rel = 'stylesheet';
-  link.href = url;
-  document.head.appendChild(link);
+  if (document.getElementById('ai-editor-css') || document.getElementById('ai-editor-css-inline')) return;
+
+  // Prefer the embedded CSS string (works regardless of where the page is served from)
+  if (AI.css && typeof AI.css === 'string'){
+    var style = document.createElement('style');
+    style.id = 'ai-editor-css-inline';
+    style.appendChild(document.createTextNode(AI.css));
+    document.head.appendChild(style);
+    return;
+  }
+
+  // Fallback: <link> with a path supplied by the consumer
+  if (url){
+    var link = document.createElement('link');
+    link.id = 'ai-editor-css';
+    link.rel = 'stylesheet';
+    link.href = url;
+    document.head.appendChild(link);
+  }
 };
 
 AI._removeCSS = function(){
-  var el = document.getElementById('ai-editor-css');
-  if (el) el.parentNode.removeChild(el);
+  ['ai-editor-css', 'ai-editor-css-inline'].forEach(function(id){
+    var el = document.getElementById(id);
+    if (el && el.parentNode) el.parentNode.removeChild(el);
+  });
 };
 
 AI._removeUI = function(){
@@ -152,7 +167,7 @@ AI.init = function(options){
   AI.apiBase = options.apiBase || '/api';
 
   if (options.cssInject !== false){
-    AI._injectCSS(options.cssUrl || 'dist/ai-editor.css');
+    AI._injectCSS(options.cssUrl);
   }
 
   AI.createUI();

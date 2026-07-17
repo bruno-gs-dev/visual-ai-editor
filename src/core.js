@@ -21,6 +21,7 @@ export var AI = {
   apiBase: '/api',
   _initialized: false,
   _eventCleanups: [],
+  css: '',
 
   SVG_NS: 'http://www.w3.org/2000/svg',
   SVG_CURSOR: '<svg viewBox="0 0 24 24"><path d="M5 3l14 8-6 2-3 6z"/></svg>',

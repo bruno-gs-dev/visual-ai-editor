@@ -3,10 +3,12 @@
  * Zero external dependencies — uses only Node.js stdlib
  *
  * Generates:
- *   dist/ai-editor.esm.js   (ES modules)
- *   dist/ai-editor.js       (UMD — window.AIEditor)
- *   dist/ai-editor.min.js   (minified UMD)
- *   dist/ai-editor.css      (copied from styles/)
+ *   dist/ai-editor.esm.js     (ES modules — import)
+ *   dist/ai-editor.js         (UMD — window.AIEditor)
+ *   dist/ai-editor.min.js     (minified UMD)
+ *   dist/ai-editor.css        (plain CSS — link fallback)
+ *   dist/ai-editor.css.js     (ESM — embedded CSS string, auto-injected)
+ *   dist/ai-editor.css.umd.js (UMD — assigns AIEditor.css for <script> users)
  */
 
 var fs = require('fs');
@@ -18,6 +20,25 @@ var DIST = path.join(ROOT, 'dist');
 var STYLES = path.join(ROOT, 'styles');
 
 if (!fs.existsSync(DIST)) fs.mkdirSync(DIST, { recursive: true });
+
+// --- 0. Read source CSS (needed by both ESM and UMD bundles) ---
+
+var cssSrc = path.join(STYLES, 'ai-editor.css');
+var cssDist = path.join(DIST, 'ai-editor.css');
+var cssContent = '';
+if (fs.existsSync(cssSrc)){
+  cssContent = fs.readFileSync(cssSrc, 'utf8');
+  fs.copyFileSync(cssSrc, cssDist);
+  console.log('[build] dist/ai-editor.css');
+} else {
+  console.warn('[build] styles/ai-editor.css not found, skipping CSS copy');
+}
+
+function escapeForTemplateLiteral(s){
+  return s.replace(/\\/g, '\\\\').replace(/`/g, '\\`').replace(/\$/g, '\\$');
+}
+
+var injectedCssTemplate = 'var __EMBEDDED_CSS__ = `' + escapeForTemplateLiteral(cssContent) + '`;';
 
 // --- 1. Generate ESM bundle ---
 
@@ -35,12 +56,11 @@ ESM_ORDER.forEach(function(file){
   esmParts.push('');
 });
 
+var indexSrc = fs.readFileSync(path.join(SRC, 'index.js'), 'utf8');
+indexSrc = stripImports(indexSrc).replace('// __INJECT_CSS__', injectedCssTemplate);
+
 esmParts.push('// --- index.js ---');
-esmParts.push('export default AI;');
-esmParts.push('export var init = AI.init;');
-esmParts.push('export var destroy = AI.destroy;');
-esmParts.push('export var setTool = AI.setTool;');
-esmParts.push('export var selectElements = AI.selectElements;');
+esmParts.push(indexSrc);
 esmParts.push('');
 
 var esmCode = esmParts.join('\n');
@@ -79,6 +99,12 @@ ESM_ORDER.forEach(function(file){
   umdParts.push('');
 });
 
+var umdIndexSrc = fs.readFileSync(path.join(SRC, 'index.js'), 'utf8');
+umdIndexSrc = stripImportsExports(umdIndexSrc).replace('// __INJECT_CSS__', injectedCssTemplate);
+umdParts.push('// --- index.js ---');
+umdParts.push(umdIndexSrc);
+umdParts.push('');
+
 umdParts.push('return AI;');
 umdParts.push('}));');
 
@@ -87,16 +113,19 @@ var umdCode = umdParts.join('\n');
 fs.writeFileSync(path.join(DIST, 'ai-editor.js'), umdCode, 'utf8');
 console.log('[build] dist/ai-editor.js (' + umdCode.length + ' bytes)');
 
-// --- 3. Copy CSS ---
+// --- 3. Standalone ESM/UMD CSS modules (for `<script src=...>` users who want separate CSS file) ---
 
-var cssSrc = path.join(STYLES, 'ai-editor.css');
-var cssDist = path.join(DIST, 'ai-editor.css');
-if (fs.existsSync(cssSrc)){
-  fs.copyFileSync(cssSrc, cssDist);
-  console.log('[build] dist/ai-editor.css');
-} else {
-  console.warn('[build] styles/ai-editor.css not found, skipping CSS copy');
-}
+var cssEsm = '// visual-ai-editor — embedded CSS (standalone ESM)\n' +
+  'export default `' + escapeForTemplateLiteral(cssContent) + '`;\n';
+
+var cssUmdStandalone = '// visual-ai-editor — embedded CSS (standalone UMD)\n' +
+  '(function(root){\n' +
+  '  if (root.AIEditor) root.AIEditor.css = ' + JSON.stringify(cssContent) + ';\n' +
+  '})(typeof self!=="undefined"?self:this);\n';
+
+fs.writeFileSync(path.join(DIST, 'ai-editor.css.js'), cssEsm, 'utf8');
+fs.writeFileSync(path.join(DIST, 'ai-editor.css.umd.js'), cssUmdStandalone, 'utf8');
+console.log('[build] dist/ai-editor.css.js + dist/ai-editor.css.umd.js');
 
 // --- 4. Minify (basic) ---
 

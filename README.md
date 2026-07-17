@@ -15,7 +15,45 @@ Peer dependency (optional, for DESIGN.md rendering):
 npm install marked
 ```
 
-## Quick Start
+## Plug & play (recommended)
+
+No more copying `server.js`, wiring `<link>`/`<script>` tags by hand, or juggling `express`/`dotenv` as separate installs — both now ship as real dependencies of this package.
+
+**1. Create `start-ai-editor.js`** in your project root:
+
+```js
+const { startServer } = require('visual-ai-editor/server');
+
+startServer({
+  port: 3000,
+  envPath: require('path').join(__dirname, '.env') // GROQ_API_KEY=...
+});
+```
+
+**2. Add one line to your HTML** (before `</body>`):
+
+```html
+<script type="module">
+  import { init } from './node_modules/visual-ai-editor/dist/ai-editor.esm.js';
+  init({ apiBase: '/api' });
+</script>
+```
+
+**3. Create `.env`** with your key (free at console.groq.com):
+
+```
+GROQ_API_KEY=your_key_here
+```
+
+**4. Run:**
+
+```bash
+node start-ai-editor.js
+```
+
+That's it — the CSS is embedded in the bundle and injected automatically (no relative paths to break), and the backend runs in-process, serving your project's static files plus the `/api/*` endpoints.
+
+## Quick Start (manual wiring)
 
 ### HTML (script tag)
 
@@ -109,20 +147,38 @@ The editor needs a backend API with these endpoints:
 | `GET` | `/api/design` | Returns DESIGN.md as `{ md: "..." }` |
 | `POST` | `/api/save` | Saves HTML to the server |
 
-### Setup
+### Setup (programmatic — recommended)
+
+`express` and `dotenv` are already dependencies of this package — nothing extra to install.
+
+```js
+// start-ai-editor.js
+const { startServer } = require('visual-ai-editor/server');
+startServer({ port: 3000, envPath: require('path').join(__dirname, '.env') });
+```
 
 ```bash
-# Copy server files to your project
+node start-ai-editor.js
+```
+
+`startServer(options)`:
+
+| Option | Type | Default | Description |
+|---|---|---|---|
+| `port` | `number` | `process.env.PORT \|\| 3000` | Port to listen on |
+| `envPath` | `string` | none | Path to a `.env` file to load (`GROQ_API_KEY`, `GROQ_MODEL`) |
+| `designMdPath` | `string` | `<cwd>/DESIGN.md` | Where to read the design system reference from |
+| `indexHtmlPath` | `string` | `<cwd>/index.html` | Where `/api/save` writes the edited HTML |
+| `silent` | `boolean` | `false` | If `true`, builds the Express app but doesn't call `.listen()` — returns `{ app, port }` so you can mount it yourself |
+
+### Setup (legacy — copy server.js)
+
+Still supported for backward compatibility:
+
+```bash
 cp node_modules/visual-ai-editor/server/server.js ./server.js
 cp node_modules/visual-ai-editor/server/.env.example ./.env
-
-# Install server dependencies
-npm install express dotenv
-
-# Add your Groq API key (free at console.groq.com)
 # Edit .env and set GROQ_API_KEY=your_key_here
-
-# Start server
 node server.js
 ```
 
