@@ -32,8 +32,9 @@
     "layout",
     "component"
   ],
-  "author": "bruno",
+  "author": "bruno-gs-dev",
   "license": "MIT",
+  "sideEffects": ["*.css"],
   "peerDependencies": {
     "marked": ">=4.0.0"
   },
