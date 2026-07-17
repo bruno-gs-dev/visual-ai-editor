@@ -1,5 +1,7 @@
 # Roadmap — Agent-Ready Onboarding + DESIGN.md Enforcement
 
+**Status: ✅ todas as 4 milestones implementadas e publicadas (v1.3.0).**
+
 Contexto: hoje o `visual-ai-editor` já enforça o design system quando um `DESIGN.md`
 existe, mas (1) nada explica a um agente de IA como a ferramenta funciona por baixo
 dos panos, e (2) se o `DESIGN.md` não existir, a IA simplesmente edita sem
@@ -162,25 +164,33 @@ como os outros templates) em vez de ter o texto hardcoded em múltiplos lugares.
 
 ---
 
-## Milestone 4 — Docs, versionamento e verificação
+## Milestone 4 — Docs, versionamento e verificação ✅ implementado
 
-- Atualizar `README.md` com uma seção "Onboarding para agentes de IA": o que
-  acontece automaticamente na instalação (`AGENTS.md`, aviso de `DESIGN.md`) e os
-  comandos manuais (`design:check`, `design:init`).
-- Bump de versão para **1.2.0** (funcionalidade nova, não é só patch).
-- **Plano de verificação end-to-end:**
-  1. `npm install` em um projeto de teste limpo (sem `DESIGN.md`) → confirmar que
-     `AGENTS.md` aparece na raiz e que o aviso de `DESIGN.md` ausente é impresso.
-  2. Rodar `npx visual-ai-editor design:init` → confirmar que `DESIGN.prompt.md` é
-     gerado com as 11 seções, perguntas, regras e checklist.
-  3. Colocar um `DESIGN.md` de exemplo (ex.: o do `smartvia`, que já é bem
-     completo) e rodar `design:check` → confirmar relatório ✓/✗ por seção
-     coerente com o conteúdo real.
-  4. Validar em `smartvia` como consumidor real (ele já tem `DESIGN.md` completo
-     — bom caso de teste para o "found" path).
-  5. Confirmar que o `postinstall` nunca quebra `npm install --ignore-scripts` nem
-     lança exceção não tratada em nenhum cenário (rodar dentro do próprio repo da
-     lib, em um projeto sem `package.json` na raiz esperada, etc.).
+> **Implementado ao longo dos releases 1.2.0 → 1.3.0** (não precisou de uma
+> rodada separada — cada milestone anterior já trouxe seu pedaço):
+>
+> - `README.md` tem a seção "AI agent onboarding" (o que acontece
+>   automaticamente na instalação) e "DESIGN.md — keep the AI on-brand" (os
+>   comandos manuais `design:check`/`design:init`).
+> - Versão publicada está em **1.3.0** (passou de 1.2.0 → 1.2.1, fix de
+>   segurança → 1.3.0, `AGENTS.md` + fix de vazamento entre seleções).
+> - **Verificação end-to-end** (todos os 5 itens do plano original foram
+>   executados, não só planejados):
+>   1. `npm pack` + instalação limpa em projeto de teste sem `DESIGN.md` →
+>      confirmado `AGENTS.md` criado e aviso de `DESIGN.md` ausente impresso.
+>   2. `design:init` testado em projeto limpo → `DESIGN.prompt.md` gerado com
+>      as 11 seções, entrevista, regras e checklist (validado por regex:
+>      `### N.` × 11, `- [ ]` × 10).
+>   3. `design:check` rodado contra o `DESIGN.md` real do `smartvia` →
+>      relatório de 7/11 seções coerente com o conteúdo real do arquivo.
+>   4. `smartvia` validado como consumidor real via registry público (não
+>      link local) em múltiplas rodadas — cada release foi reinstalado do
+>      zero (`rm -rf node_modules package-lock.json && npm install`) e
+>      testado no browser via Chrome headless/CDP.
+>   5. `postinstall` testado com: path inexistente em `INIT_CWD`, execução
+>      dentro do próprio repo da lib (auto-skip), e via `npm rebuild` num
+>      tarball empacotado de verdade — sempre `exit 0`, nunca quebra o
+>      install.
 
 ---
 
