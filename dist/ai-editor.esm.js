@@ -766,10 +766,10 @@ AI.destroy = function(){
 
 // --- index.js ---
 
-import './tools.js';
-import './selection.js';
-import './actions.js';
-import './ui.js';
+
+
+
+
 var __EMBEDDED_CSS__ = `/* ---------- AI Selection Editor ---------- */
 #ai-toolbar{
   position:fixed;left:var(--lg, 16px);top:50%;transform:translateY(-50%);z-index:400;

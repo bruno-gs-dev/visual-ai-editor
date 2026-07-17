@@ -1,6 +1,6 @@
 {
   "name": "visual-ai-editor",
-  "version": "1.1.0",
+  "version": "1.1.1",
   "description": "AI-powered visual HTML editor with selection tools and Groq API integration",
   "main": "dist/ai-editor.js",
   "module": "dist/ai-editor.esm.js",

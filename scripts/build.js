@@ -72,7 +72,8 @@ console.log('[build] dist/ai-editor.esm.js (' + esmCode.length + ' bytes)');
 function stripImports(code){
   return code
     .replace(/^import\s+\{[^}]*\}\s+from\s+['"][^'"]*['"];\s*$/gm, '')
-    .replace(/^import\s+\w+\s+from\s+['"][^'"]*['"];\s*$/gm, '');
+    .replace(/^import\s+\w+\s+from\s+['"][^'"]*['"];\s*$/gm, '')
+    .replace(/^import\s+['"][^'"]*['"];\s*$/gm, '');
 }
 
 function stripImportsExports(code){
