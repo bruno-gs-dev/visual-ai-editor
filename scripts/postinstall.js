@@ -8,6 +8,8 @@
  * What it does:
  *   - Skips entirely when running inside this package's own repo (so
  *     `npm install` here, during development, doesn't warn about itself).
+ *   - Delivers/updates AGENTS.md in the consumer project root (idempotent —
+ *     see lib/agents-md.js for the merge logic).
  *   - Looks for DESIGN.md in the consumer project. If missing, prints a
  *     one-line nudge to run `npx visual-ai-editor design:init`.
  */
@@ -20,6 +22,18 @@ function main(){
 
   // Running inside the lib's own repo (e.g. `npm install` for local dev) — skip.
   if (path.resolve(projectRoot) === path.resolve(PKG_ROOT)) return;
+
+  try {
+    var installAgentsMd = require('../lib/agents-md.js').installAgentsMd;
+    var result = installAgentsMd(projectRoot);
+    if (result.action === 'created'){
+      console.log('[visual-ai-editor] AGENTS.md criado em ' + result.path + ' (guia para agentes de IA).');
+    } else if (result.action === 'appended' || result.action === 'updated'){
+      console.log('[visual-ai-editor] AGENTS.md atualizado em ' + result.path + '.');
+    }
+  } catch (e) {
+    console.warn('[visual-ai-editor] Não foi possível instalar AGENTS.md (não crítico): ' + (e && e.message));
+  }
 
   var designCheck = require('../lib/design-check.js');
   var found = designCheck.findDesignMd(projectRoot);

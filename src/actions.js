@@ -213,6 +213,10 @@ AI.undoLast = function(){
   var oldEls = AI.undoStack.pop();
   var statusEl = document.getElementById('ai-editor-status');
 
+  AI.lastHtml = '';
+  AI.lastSelector = '';
+  AI.lastInstruction = '';
+
   if (AI.selectedEls.length){
     var newEls = AI.selectedEls.slice();
     oldEls.forEach(function(oldEl, i){

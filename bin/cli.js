@@ -4,6 +4,7 @@
  *
  *   npx visual-ai-editor design:check   — locate DESIGN.md and report section coverage
  *   npx visual-ai-editor design:init    — write DESIGN.prompt.md (guided prompt for an AI agent)
+ *   npx visual-ai-editor agents:init    — install/update AGENTS.md (normally done by postinstall)
  */
 
 var fs = require('fs');
@@ -58,12 +59,34 @@ function cmdDesignInit(){
   console.log('para gerar o DESIGN.md do projeto na raiz.');
 }
 
+function cmdAgentsInit(){
+  var root = resolveProjectRoot();
+  var installAgentsMd = require('../lib/agents-md.js').installAgentsMd;
+  var result = installAgentsMd(root);
+
+  switch (result.action){
+    case 'created':
+      console.log('[visual-ai-editor] Criado: ' + result.path);
+      break;
+    case 'appended':
+      console.log('[visual-ai-editor] ' + result.path + ' já existia — bloco do visual-ai-editor adicionado ao final.');
+      break;
+    case 'updated':
+      console.log('[visual-ai-editor] ' + result.path + ' atualizado (bloco do visual-ai-editor estava desatualizado).');
+      break;
+    case 'unchanged':
+      console.log('[visual-ai-editor] ' + result.path + ' já está atualizado — nada a fazer.');
+      break;
+  }
+}
+
 function printUsage(){
   console.log('Uso: visual-ai-editor <comando>');
   console.log('');
   console.log('Comandos:');
   console.log('  design:check   Procura DESIGN.md no projeto e reporta cobertura das 11 seções');
   console.log('  design:init    Gera DESIGN.prompt.md — um prompt guiado para criar o DESIGN.md com IA');
+  console.log('  agents:init    Instala/atualiza AGENTS.md (normalmente feito automaticamente no install)');
 }
 
 var command = process.argv[2];
@@ -74,6 +97,9 @@ switch (command){
     break;
   case 'design:init':
     cmdDesignInit();
+    break;
+  case 'agents:init':
+    cmdAgentsInit();
     break;
   default:
     printUsage();

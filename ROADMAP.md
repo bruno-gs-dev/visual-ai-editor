@@ -10,7 +10,24 @@ Metodologia de referência para o `DESIGN.md`: https://camaraux.com.br/como-cria
 
 ---
 
-## Milestone 1 — `AGENTS.md`: manual para agentes de IA, entregue na instalação
+## Milestone 1 — `AGENTS.md`: manual para agentes de IA, entregue na instalação ✅ implementado
+
+> **Implementado:** `docs/AGENTS.md` (fonte versionada), `lib/agents-md.js`
+> (lógica de merge idempotente: cria se não existir, faz append se existir
+> `AGENTS.md` sem nosso bloco, substitui só o bloco delimitado
+> `<!-- visual-ai-editor:start/end -->` se já existir — preservando sempre o
+> conteúdo do usuário ao redor). Integrado ao `postinstall.js` existente
+> (silencioso, nunca falha o install) e exposto também como comando manual
+> `npx visual-ai-editor agents:init` para quem instala com `--ignore-scripts`.
+>
+> Testados os 3 cenários de merge (sem arquivo → created; arquivo do usuário
+> sem nosso bloco → appended preservando conteúdo; bloco desatualizado →
+> updated substituindo só o bloco) e o fluxo real via `npm pack` + instalação
+> limpa + `npm rebuild` (simulando o hook de install real) — `AGENTS.md`
+> apareceu corretamente na raiz do projeto de teste.
+>
+> **Nome do arquivo:** `AGENTS.md` (decidido com o usuário — convenção
+> cross-tool, não conflita com um `CLAUDE.md` que o projeto já tenha).
 
 **Objetivo:** todo projeto que instalar `visual-ai-editor` ganha automaticamente um
 `AGENTS.md` na raiz, explicando pra qualquer agente (Claude Code, Cursor, etc.)

@@ -303,6 +303,9 @@ AI.exitSelection = function(){
 
 AI.selectElements = function(els){
   AI.selectedEls = els;
+  AI.lastHtml = '';
+  AI.lastSelector = '';
+  AI.lastInstruction = '';
   AI.hoverBox.style.display = 'none';
   AI.tagLabel.style.display = 'none';
   AI.clearSelBoxes();
@@ -558,6 +561,10 @@ AI.undoLast = function(){
   if (!AI.undoStack.length) return;
   var oldEls = AI.undoStack.pop();
   var statusEl = document.getElementById('ai-editor-status');
+
+  AI.lastHtml = '';
+  AI.lastSelector = '';
+  AI.lastInstruction = '';
 
   if (AI.selectedEls.length){
     var newEls = AI.selectedEls.slice();

@@ -55,6 +55,21 @@ node start-ai-editor.js
 
 That's it — the CSS is embedded in the bundle and injected automatically (no relative paths to break), and the backend runs in-process, serving your project's static files plus the `/api/*` endpoints.
 
+## AI agent onboarding
+
+On `npm install`, this package also delivers an `AGENTS.md` file to your
+project root — a guide explaining to any AI coding agent (Claude Code, Cursor,
+etc.) how the editor works: the API contract, how `DESIGN.md` enforcement
+works, how force mode works, and common troubleshooting. This means an agent
+working on your project can read `AGENTS.md` and understand this tool without
+you having to explain it.
+
+- If your project has no `AGENTS.md` yet, one is created.
+- If you already have one, our section is appended to it (or updated in place
+  on future upgrades) — your existing content is never touched.
+- If your npm setup blocks install scripts, run `npx visual-ai-editor
+  agents:init` manually to get the same result.
+
 ## DESIGN.md — keep the AI on-brand
 
 `DESIGN.md` is what stops the AI from inventing colors, spacing, or components

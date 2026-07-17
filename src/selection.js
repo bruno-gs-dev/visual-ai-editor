@@ -38,6 +38,9 @@ AI.exitSelection = function(){
 
 AI.selectElements = function(els){
   AI.selectedEls = els;
+  AI.lastHtml = '';
+  AI.lastSelector = '';
+  AI.lastInstruction = '';
   AI.hoverBox.style.display = 'none';
   AI.tagLabel.style.display = 'none';
   AI.clearSelBoxes();
