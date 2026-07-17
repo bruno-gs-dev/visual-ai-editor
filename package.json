@@ -1,0 +1,49 @@
+{
+  "name": "visual-ai-editor",
+  "version": "1.0.0",
+  "description": "AI-powered visual HTML editor with selection tools and Groq API integration",
+  "main": "dist/ai-editor.js",
+  "module": "dist/ai-editor.esm.js",
+  "exports": {
+    ".": {
+      "import": "./dist/ai-editor.esm.js",
+      "require": "./dist/ai-editor.js"
+    },
+    "./dist/ai-editor.css": "./dist/ai-editor.css"
+  },
+  "files": [
+    "dist/",
+    "src/",
+    "server/",
+    "examples/",
+    "README.md"
+  ],
+  "scripts": {
+    "build": "node scripts/build.js",
+    "dev": "node scripts/build.js --watch"
+  },
+  "keywords": [
+    "ai",
+    "editor",
+    "html",
+    "visual",
+    "groq",
+    "design-system",
+    "layout",
+    "component"
+  ],
+  "author": "bruno",
+  "license": "MIT",
+  "peerDependencies": {
+    "marked": ">=4.0.0"
+  },
+  "peerDependenciesMeta": {
+    "marked": {
+      "optional": true
+    }
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/bruno/visual-ai-editor"
+  }
+}

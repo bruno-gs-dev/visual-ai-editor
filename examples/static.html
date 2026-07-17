@@ -1,0 +1,45 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>visual-ai-editor — Exemplo Static</title>
+  <link rel="stylesheet" href="../dist/ai-editor.css">
+  <style>
+    body { margin: 0; font-family: sans-serif; background: #0a0a0a; color: #fff; }
+    .hero { padding: 80px 40px; text-align: center; }
+    .hero h1 { font-size: 48px; margin: 0 0 16px; }
+    .hero p { font-size: 18px; color: #888; max-width: 600px; margin: 0 auto; }
+    .cards { display: grid; grid-template-columns: repeat(3, 1fr); gap: 24px; padding: 40px; max-width: 1000px; margin: 0 auto; }
+    .card { background: #1a1a1a; border: 1px solid #333; padding: 24px; border-radius: 8px; }
+    .card h3 { margin: 0 0 8px; }
+    .card p { margin: 0; color: #888; font-size: 14px; }
+  </style>
+</head>
+<body>
+  <div class="hero">
+    <h1>Meu Site</h1>
+    <p>Clique nos elementos para editar com IA. Use a toolbar à esquerda para selecionar.</p>
+  </div>
+  <div class="cards">
+    <div class="card">
+      <h3>Feature 1</h3>
+      <p>Descrição da primeira feature do produto.</p>
+    </div>
+    <div class="card">
+      <h3>Feature 2</h3>
+      <p>Descrição da segunda feature do produto.</p>
+    </div>
+    <div class="card">
+      <h3>Feature 3</h3>
+      <p>Descrição da terceira feature do produto.</p>
+    </div>
+  </div>
+
+  <!-- Load via UMD (script tag) -->
+  <script src="../dist/ai-editor.js"></script>
+  <script>
+    AIEditor.init({ apiBase: '/api' });
+  </script>
+</body>
+</html>
