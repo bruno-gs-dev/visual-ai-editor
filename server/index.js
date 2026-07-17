@@ -85,13 +85,37 @@ function assertProductionSafe(options, t){
   throw new Error(t('production.refuse'));
 }
 
+// Convenience presets so common local providers don't require typing out an
+// endpoint URL. An explicit `ai.endpoint` always wins over the preset — this
+// is sugar on top of the fully-generic ai.endpoint/model/apiKey contract, not
+// a replacement for it.
+var PROVIDER_PRESETS = {
+  ollama: { endpoint: 'http://localhost:11434/v1/chat/completions' },
+  lmstudio: { endpoint: 'http://localhost:1234/v1/chat/completions' }
+};
+
+/** Local/loopback endpoints (Ollama, LM Studio, ...) don't need an API key. */
+function isLocalEndpoint(endpoint){
+  try {
+    var host = new URL(endpoint).hostname;
+    return host === 'localhost' || host === '127.0.0.1' || host === '::1' || host === '0.0.0.0';
+  } catch (e) {
+    return false;
+  }
+}
+
 /** Provider config resolved lazily so envPath-loaded vars are honored. */
 function resolveProvider(options){
   var ai = options.ai || {};
+  var preset = (ai.provider && PROVIDER_PRESETS[ai.provider]) || {};
+  var endpoint = ai.endpoint || preset.endpoint || process.env.AI_ENDPOINT || DEFAULT_ENDPOINT;
   return {
-    endpoint: ai.endpoint || process.env.AI_ENDPOINT || DEFAULT_ENDPOINT,
+    endpoint: endpoint,
     model: ai.model || process.env.AI_MODEL || process.env.GROQ_MODEL || DEFAULT_MODEL,
     apiKey: ai.apiKey || process.env.AI_API_KEY || process.env.GROQ_API_KEY || '',
+    // A local endpoint (or an explicit override) doesn't require a key —
+    // there's nothing to authenticate against on localhost.
+    requiresApiKey: ai.requiresApiKey !== undefined ? ai.requiresApiKey : !isLocalEndpoint(endpoint),
     jsonMode: ai.jsonMode !== false,
     temperature: typeof ai.temperature === 'number' ? ai.temperature : 0.2
   };
@@ -261,8 +285,11 @@ function buildApp(options){
   assertProductionSafe(options, t);
 
   var designMdPath = options.designMdPath || path.join(process.cwd(), 'DESIGN.md');
-  var indexHtmlPath = options.indexHtmlPath || path.join(process.cwd(), 'index.html');
   var staticDir = options.staticDir || process.cwd();
+  // Derived from staticDir (not process.cwd()) so a customized staticDir without
+  // an explicit indexHtmlPath still saves somewhere the server actually serves
+  // from, instead of silently writing outside it.
+  var indexHtmlPath = options.indexHtmlPath || path.join(staticDir, 'index.html');
   var maxHtmlBytes = typeof options.maxHtmlBytes === 'number' ? options.maxHtmlBytes : 200000;
   var readDesign = designMdReader(designMdPath);
 
@@ -311,7 +338,7 @@ function buildApp(options){
     }
 
     var provider = resolveProvider(options);
-    if (!provider.apiKey){
+    if (provider.requiresApiKey && !provider.apiKey){
       return res.status(500).json({ error: t('edit.no-api-key') });
     }
 

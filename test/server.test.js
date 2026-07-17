@@ -8,6 +8,7 @@ var http = require('http');
 var serverLib = require('../server/index.js');
 
 var FAKE_AI_URL = 'http://fake-ai-provider.test/v1/chat/completions';
+var FAKE_OLLAMA_URL = 'http://localhost:11434/v1/chat/completions';
 
 async function withTempDir(fn){
   var dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ai-editor-test-'));
@@ -25,11 +26,12 @@ function baseUrl(server){
   return 'http://127.0.0.1:' + server.address().port;
 }
 
-/** Stub global.fetch so calls to FAKE_AI_URL return `reply`; everything else uses the real fetch. */
-function stubAiProvider(reply){
+/** Stub global.fetch so calls to `matchUrl` (default FAKE_AI_URL) return `reply`; everything else uses the real fetch. */
+function stubAiProvider(reply, matchUrl){
+  var target = matchUrl || FAKE_AI_URL;
   var realFetch = global.fetch;
   global.fetch = function (url, opts){
-    if (String(url) === FAKE_AI_URL){
+    if (String(url) === target){
       return Promise.resolve({
         ok: reply.ok !== false,
         status: reply.status || 200,
@@ -188,6 +190,103 @@ test('POST /api/edit force=true skips palette enforcement', async function(){
   });
 });
 
+test('POST /api/edit with ai.provider "ollama" does not require an apiKey', async function(){
+  await withTempDir(async function(dir){
+    var app = serverLib.buildApp({
+      staticDir: dir,
+      ai: { provider: 'ollama', model: 'llama3.2' }, // no apiKey
+      silent: true
+    });
+    var server = await listen(app);
+    var restore = stubAiProvider({
+      body: { choices: [{ message: { content: JSON.stringify({ html: '<p>hi</p>' }) } }] }
+    }, FAKE_OLLAMA_URL);
+    try {
+      var res = await fetch(baseUrl(server) + '/api/edit', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ html: '<p>x</p>', instruction: 'say hi' })
+      });
+      var data = await res.json();
+      assert.equal(res.status, 200);
+      assert.equal(data.html, '<p>hi</p>');
+    } finally { restore(); server.close(); }
+  });
+});
+
+test('POST /api/edit with an explicit local endpoint (no provider preset) also skips the apiKey requirement', async function(){
+  await withTempDir(async function(dir){
+    var app = serverLib.buildApp({
+      staticDir: dir,
+      ai: { endpoint: 'http://127.0.0.1:1234/v1/chat/completions', model: 'x' },
+      silent: true
+    });
+    var server = await listen(app);
+    var restore = stubAiProvider({
+      body: { choices: [{ message: { content: JSON.stringify({ html: '<p>ok</p>' }) } }] }
+    }, 'http://127.0.0.1:1234/v1/chat/completions');
+    try {
+      var res = await fetch(baseUrl(server) + '/api/edit', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ html: '<p>x</p>', instruction: 'say ok' })
+      });
+      assert.equal(res.status, 200);
+    } finally { restore(); server.close(); }
+  });
+});
+
+test('POST /api/edit still requires an apiKey for a remote endpoint even with ai.provider unset', async function(){
+  await withTempDir(async function(dir){
+    var app = serverLib.buildApp({ staticDir: dir, ai: { endpoint: FAKE_AI_URL }, silent: true });
+    var server = await listen(app);
+    try {
+      var res = await fetch(baseUrl(server) + '/api/edit', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ html: '<p>x</p>', instruction: 'say ok' })
+      });
+      assert.equal(res.status, 500);
+    } finally { server.close(); }
+  });
+});
+
+test('POST /api/edit honors an explicit requiresApiKey:true override for a local endpoint', async function(){
+  await withTempDir(async function(dir){
+    var app = serverLib.buildApp({
+      staticDir: dir,
+      ai: { provider: 'ollama', model: 'x', requiresApiKey: true },
+      silent: true
+    });
+    var server = await listen(app);
+    try {
+      var res = await fetch(baseUrl(server) + '/api/edit', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ html: '<p>x</p>', instruction: 'say ok' })
+      });
+      assert.equal(res.status, 500);
+    } finally { server.close(); }
+  });
+});
+
+test('POST /api/edit honors an explicit requiresApiKey:false override for a remote endpoint', async function(){
+  await withTempDir(async function(dir){
+    var app = serverLib.buildApp({
+      staticDir: dir,
+      ai: { endpoint: FAKE_AI_URL, requiresApiKey: false },
+      silent: true
+    });
+    var server = await listen(app);
+    var restore = stubAiProvider({
+      body: { choices: [{ message: { content: JSON.stringify({ html: '<p>ok</p>' }) } }] }
+    });
+    try {
+      var res = await fetch(baseUrl(server) + '/api/edit', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ html: '<p>x</p>', instruction: 'say ok' })
+      });
+      assert.equal(res.status, 200);
+    } finally { restore(); server.close(); }
+  });
+});
+
 test('POST /api/save with patches applies a surgical replacement and writes a backup', async function(){
   await withTempDir(async function(dir){
     var indexPath = path.join(dir, 'index.html');
@@ -324,6 +423,28 @@ test('sensitive paths are blocked by static middleware', async function(){
       assert.equal(res1.status, 404);
       var res2 = await fetch(baseUrl(server) + '/.env');
       assert.equal(res2.status, 404);
+    } finally { server.close(); }
+  });
+});
+
+test('default indexHtmlPath is derived from a custom staticDir, not process.cwd()', async function(){
+  await withTempDir(async function(dir){
+    fs.writeFileSync(path.join(dir, 'index.html'), '<html>original</html>');
+    var cwdBefore = process.cwd();
+    var app = serverLib.buildApp({ staticDir: dir, silent: true }); // no indexHtmlPath override
+    var server = await listen(app);
+    try {
+      var res = await fetch(baseUrl(server) + '/api/save', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ html: '<html>saved</html>' })
+      });
+      var data = await res.json();
+      assert.equal(res.status, 200);
+      assert.equal(path.resolve(data.path), path.resolve(path.join(dir, 'index.html')));
+      assert.equal(fs.readFileSync(path.join(dir, 'index.html'), 'utf8'), '<html>saved</html>');
+      // Must NOT have written next to process.cwd() instead.
+      assert.equal(fs.existsSync(path.join(cwdBefore, 'index.html')) &&
+        fs.readFileSync(path.join(cwdBefore, 'index.html'), 'utf8') === '<html>saved</html>', false);
     } finally { server.close(); }
   });
 });

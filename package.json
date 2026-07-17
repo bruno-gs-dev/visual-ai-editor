@@ -1,7 +1,7 @@
 {
   "name": "visual-ai-editor",
-  "version": "1.4.0",
-  "description": "AI-powered visual HTML editor with selection tools, design-system enforcement, and surgical source patching. Works with any OpenAI-compatible LLM provider.",
+  "version": "1.5.0",
+  "description": "AI-powered visual HTML editor with selection tools, design-system enforcement, and surgical source patching. Works with any OpenAI-compatible LLM provider, including local ones like Ollama.",
   "main": "dist/ai-editor.js",
   "module": "dist/ai-editor.esm.js",
   "types": "types/index.d.ts",
@@ -42,7 +42,7 @@
     "build": "node scripts/build.js",
     "dev": "node scripts/build.js --watch",
     "postinstall": "node scripts/postinstall.js",
-    "test": "node --test test/"
+    "test": "node --test test/*.test.js"
   },
   "keywords": [
     "ai",
@@ -64,13 +64,8 @@
     "dotenv": "^16.4.5",
     "express": "^4.19.2"
   },
-  "peerDependencies": {
-    "marked": ">=4.0.0"
-  },
-  "peerDependenciesMeta": {
-    "marked": {
-      "optional": true
-    }
+  "devDependencies": {
+    "marked": "^18.0.6"
   },
   "repository": {
     "type": "git",

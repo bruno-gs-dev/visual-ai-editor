@@ -21,6 +21,26 @@ var STYLES = path.join(ROOT, 'styles');
 
 if (!fs.existsSync(DIST)) fs.mkdirSync(DIST, { recursive: true });
 
+// --- -1. Read marked's UMD bundle (embedded so consumers don't need their own
+// install for the DESIGN.md viewer to render real markdown — see ROADMAP.md).
+// It's a self-contained, self-executing UMD file: in a browser (script tag or
+// ESM import) it has no `module`/`exports`/AMD `define` to detect, so it falls
+// through to `globalThis.marked = f()` — a true global, which is exactly what
+// `typeof marked !== 'undefined'` in src/actions.js already checks for. Embed
+// it completely verbatim (no stripImports* — it's not our module syntax).
+
+var markedUmdPath = path.join(ROOT, 'node_modules', 'marked', 'lib', 'marked.umd.js');
+var markedSrc = '';
+if (fs.existsSync(markedUmdPath)){
+  var markedPkg = JSON.parse(fs.readFileSync(path.join(ROOT, 'node_modules', 'marked', 'package.json'), 'utf8'));
+  markedSrc = '// --- marked v' + markedPkg.version + ' (bundled, MIT license — https://github.com/markedjs/marked) ---\n' +
+    fs.readFileSync(markedUmdPath, 'utf8') + '\n';
+  console.log('[build] embedding marked v' + markedPkg.version + ' (' + markedSrc.length + ' bytes)');
+} else {
+  console.warn('[build] node_modules/marked not found — run `npm install` (devDependency).');
+  console.warn('[build] Building WITHOUT bundled marked — the DESIGN.md viewer will fall back to a <pre> dump.');
+}
+
 // --- 0. Read source CSS (needed by both ESM and UMD bundles) ---
 
 var cssSrc = path.join(STYLES, 'ai-editor.css');
@@ -63,7 +83,12 @@ esmParts.push('// --- index.js ---');
 esmParts.push(indexSrc);
 esmParts.push('');
 
-var esmCode = esmParts.join('\n');
+// marked is prepended as an independent top-level statement (not nested inside
+// our own code) — it's a self-invoking IIFE that sets a global on its own;
+// keeping it outside our own bundle's string also means it's easy to exclude
+// from the crude regex-based minifier below (running that over marked's
+// already-minified, regex-heavy source would corrupt it).
+var esmCode = (markedSrc ? markedSrc + '\n' : '') + esmParts.join('\n');
 fs.writeFileSync(path.join(DIST, 'ai-editor.esm.js'), esmCode, 'utf8');
 console.log('[build] dist/ai-editor.esm.js (' + esmCode.length + ' bytes)');
 
@@ -109,7 +134,10 @@ umdParts.push('');
 umdParts.push('return AI;');
 umdParts.push('}));');
 
-var umdCode = umdParts.join('\n');
+// marked prepended as an independent top-level statement — see the comment
+// on esmCode above for why (also keeps it out of the minifier's way below).
+var ownUmdCode = umdParts.join('\n');
+var umdCode = (markedSrc ? markedSrc + '\n' : '') + ownUmdCode;
 
 fs.writeFileSync(path.join(DIST, 'ai-editor.js'), umdCode, 'utf8');
 console.log('[build] dist/ai-editor.js (' + umdCode.length + ' bytes)');
@@ -132,14 +160,20 @@ console.log('[build] dist/ai-editor.css.js + dist/ai-editor.css.umd.js');
 
 function basicMinify(code){
   return code
-    .replace(/\/\/[^\n]*/g, '')
+    // Strip line comments, but not "//" inside a string literal like a URL
+    // scheme ("http://...") — those are always immediately preceded by ":",
+    // which a real line comment marker never is in our own hand-formatted code.
+    .replace(/(?<!:)\/\/[^\n]*/g, '')
     .replace(/\/\*[\s\S]*?\*\//g, '')
     .replace(/\s+/g, ' ')
     .replace(/\s*([{}();,=:+\-<>!&|?])\s*/g, '$1')
     .trim();
 }
 
-var minCode = basicMinify(umdCode);
+// Only our own code goes through the crude regex minifier — marked ships
+// already minified, and this minifier doesn't understand JS syntax (strings,
+// regex literals) well enough to run over dense third-party code safely.
+var minCode = (markedSrc ? markedSrc + '\n' : '') + basicMinify(ownUmdCode);
 fs.writeFileSync(path.join(DIST, 'ai-editor.min.js'), minCode, 'utf8');
 console.log('[build] dist/ai-editor.min.js (' + minCode.length + ' bytes)');
 

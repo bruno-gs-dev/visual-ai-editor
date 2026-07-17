@@ -1,5 +1,48 @@
 # Changelog
 
+## 1.5.0
+
+### Added
+- **Bundled `marked`.** The DESIGN.md viewer's markdown rendering no longer
+  requires a separate `npm install marked` — `marked`'s browser bundle is
+  embedded directly into `dist/ai-editor.esm.js` and `dist/ai-editor.js` at
+  build time (as a global, the same way the client already checked for it).
+  `marked` moved from an optional peerDependency to a build-time-only
+  devDependency; consumers never need to install or import it themselves.
+- **First-class local-provider support (Ollama, LM Studio).** New `ai:
+  { provider: 'ollama' | 'lmstudio', model }` shorthand resolves to the
+  right localhost endpoint automatically. An explicit `ai.endpoint` still
+  overrides the preset — this is sugar on top of the existing generic
+  contract, not a replacement for it.
+- New `ai.requiresApiKey` option (auto-detected: `false` for
+  `localhost`/`127.0.0.1` endpoints, `true` otherwise) to override either
+  direction explicitly.
+
+### Fixed
+- **`/api/edit` no longer hard-requires an API key for local endpoints.**
+  Previously any missing `apiKey` returned a 500, which made Ollama/LM
+  Studio unusable without fabricating a dummy key. Remote providers
+  (Groq, OpenAI, ...) still correctly require one.
+- **The build's minifier no longer corrupts string literals containing
+  `"://"`** (e.g. `SVG_NS: 'http://www.w3.org/2000/svg'`) — its line-comment
+  stripping regex was treating the `//` inside the URL as a comment start.
+  Caught while adding a build-output regression test
+  (`test/build.test.js`) for the bundled-marked work above; this bug
+  predates this release and affected every previously-published
+  `dist/ai-editor.min.js`.
+- **`startServer()`/`buildApp()`'s default `indexHtmlPath` now derives from
+  `staticDir`** instead of `process.cwd()`. Previously, passing a custom
+  `staticDir` without also passing `indexHtmlPath` meant `/api/save`
+  silently wrote to `<cwd>/index.html` — usually outside the directory
+  actually being served, and not reachable through the running server.
+  Caught because it was actively polluting this very repo's root directory
+  during `npm test` runs (any save-endpoint test using a custom `staticDir`
+  without overriding `indexHtmlPath` was writing next to `package.json`
+  instead of into its temp directory). No change for the common case
+  (default `staticDir` = `process.cwd()`, so the default `indexHtmlPath` is
+  unchanged there too) — only customized-`staticDir` setups without an
+  explicit `indexHtmlPath` behave differently now, and correctly so.
+
 ## 1.4.0
 
 ### Added

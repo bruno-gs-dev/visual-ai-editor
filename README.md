@@ -14,12 +14,11 @@ Bring your own LLM: any OpenAI-compatible chat-completions API works (Groq, Open
 npm install visual-ai-editor
 ```
 
-Peer dependency (optional, for DESIGN.md rendering):
-```bash
-npm install marked
-```
-
-Ships with TypeScript types for both the client (`visual-ai-editor`) and server (`visual-ai-editor/server`) entry points — no `@types/*` package needed.
+That's the only install — markdown rendering for the DESIGN.md viewer
+([marked](https://github.com/markedjs/marked)) is bundled directly into
+`dist/`, and TypeScript types for both the client (`visual-ai-editor`) and
+server (`visual-ai-editor/server`) entry points ship with the package —
+nothing extra to install for either.
 
 ## Plug & play (recommended)
 
@@ -83,7 +82,44 @@ AI_MODEL=gpt-4o-mini
 AI_API_KEY=sk-...
 ```
 
-Local models (Ollama, LM Studio) work the same way — point `AI_ENDPOINT` at their OpenAI-compatible endpoint (e.g. `http://localhost:11434/v1/chat/completions` for Ollama). The legacy `GROQ_API_KEY`/`GROQ_MODEL` env vars still work as a fallback for existing setups.
+### Local models (Ollama, LM Studio)
+
+Local providers get a shorthand — no need to type out the endpoint URL, and
+no API key is required (there's nothing to authenticate against on
+localhost; the server auto-detects this from the endpoint's host):
+
+```js
+startServer({
+  ai: { provider: 'ollama', model: 'llama3.2' } // pull it first: `ollama pull llama3.2`
+});
+```
+
+```js
+startServer({
+  ai: { provider: 'lmstudio', model: 'your-loaded-model' }
+});
+```
+
+`provider: 'ollama'` resolves to `http://localhost:11434/v1/chat/completions`;
+`provider: 'lmstudio'` to `http://localhost:1234/v1/chat/completions`. An
+explicit `endpoint` always overrides the preset, so nothing about the
+generic contract above changes — this is purely a shortcut. The apiKey
+requirement auto-detects off for any `localhost`/`127.0.0.1` endpoint, preset
+or not; override either direction with `requiresApiKey: true` / `false`.
+
+**A note on model capability.** This was tested live against a real local
+Ollama instance during development. The plumbing (no-auth requests, error
+propagation, structured-JSON parsing) works correctly regardless of model
+size. Response *quality* doesn't: a capable model (Groq's 70B, GPT-4o-mini,
+or a similarly-sized local model your hardware can run) reliably follows the
+full instruction set (DESIGN.md compliance, force mode, the `{html}`/`{warn}`
+JSON contract). A small local model (3B parameters, in testing) sometimes
+produced truncated or malformed JSON once the system prompt included a
+project's `DESIGN.md` — this is a model-capability limit, not a bug to route
+around; if edits come back malformed or empty with a local model, try a
+larger one before assuming something's broken.
+
+The legacy `GROQ_API_KEY`/`GROQ_MODEL` env vars still work as a fallback for existing setups.
 
 ## AI agent onboarding
 

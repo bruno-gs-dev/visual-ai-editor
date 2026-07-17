@@ -7,12 +7,25 @@
 // if you need the full type.
 
 export interface AIProviderOptions {
+  /**
+   * Convenience preset that fills in `endpoint` for common local providers —
+   * 'ollama' (http://localhost:11434/v1/chat/completions) or 'lmstudio'
+   * (http://localhost:1234/v1/chat/completions). An explicit `endpoint`
+   * always overrides the preset.
+   */
+  provider?: 'ollama' | 'lmstudio';
   /** OpenAI-compatible chat-completions endpoint. Default: Groq's endpoint. */
   endpoint?: string;
   /** Model name understood by the endpoint. */
   model?: string;
   /** API key for the provider. Falls back to AI_API_KEY / GROQ_API_KEY env vars. */
   apiKey?: string;
+  /**
+   * Whether an API key is required. Default: auto-detected — false for a
+   * localhost/127.0.0.1 endpoint (Ollama, LM Studio, ...), true otherwise.
+   * Set explicitly to override the auto-detection either direction.
+   */
+  requiresApiKey?: boolean;
   /** Request structured JSON output (response_format: json_object). Default: true. Falls back automatically if the provider rejects it. */
   jsonMode?: boolean;
   /** Sampling temperature. Default: 0.2 */
