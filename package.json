@@ -64,8 +64,10 @@
     "*.css"
   ],
   "dependencies": {
+    "chalk": "^4.1.2",
     "dotenv": "^16.4.5",
-    "express": "^4.19.2"
+    "express": "^4.19.2",
+    "prompts": "^2.4.2"
   },
   "devDependencies": {
     "marked": "^18.0.6",

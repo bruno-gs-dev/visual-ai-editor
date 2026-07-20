@@ -37,6 +37,8 @@ var tokens = require('../lib/design-tokens.js');
 var patchLib = require('../lib/patch.js');
 var serverMessages = require('../lib/server-messages.js');
 var isLocalEndpoint = require('../lib/env-init.js').isLocalEndpoint;
+var providerRegistry = require('./providers/index.js');
+var configLib = require('../lib/config.js');
 
 var DEFAULT_ENDPOINT = 'https://api.groq.com/openai/v1/chat/completions';
 var DEFAULT_MODEL = 'llama-3.3-70b-versatile';
@@ -102,11 +104,13 @@ var PROVIDER_PRESETS = {
 function resolveProvider(options){
   var ai = options.ai || {};
   var preset = (ai.provider && PROVIDER_PRESETS[ai.provider]) || {};
-  var endpoint = ai.endpoint || preset.endpoint || process.env.AI_ENDPOINT || DEFAULT_ENDPOINT;
+  var root = options.staticDir || process.cwd();
+  var fileConfig = configLib.resolveConfig(root, options);
+  var endpoint = ai.endpoint || fileConfig.endpoint || preset.endpoint || process.env.AI_ENDPOINT || DEFAULT_ENDPOINT;
   return {
     endpoint: endpoint,
-    model: ai.model || process.env.AI_MODEL || process.env.GROQ_MODEL || DEFAULT_MODEL,
-    apiKey: ai.apiKey || process.env.AI_API_KEY || process.env.GROQ_API_KEY || '',
+    model: ai.model || fileConfig.model || process.env.AI_MODEL || process.env.GROQ_MODEL || DEFAULT_MODEL,
+    apiKey: ai.apiKey || fileConfig.apiKey || process.env.AI_API_KEY || process.env.GROQ_API_KEY || '',
     // A local endpoint (or an explicit override) doesn't require a key —
     // there's nothing to authenticate against on localhost.
     requiresApiKey: ai.requiresApiKey !== undefined ? ai.requiresApiKey : !isLocalEndpoint(endpoint),
@@ -276,26 +280,16 @@ function parseModelResponse(content){
 }
 
 async function callProvider(provider, prompts, useJsonMode){
-  var body = {
-    model: provider.model,
-    temperature: provider.temperature,
-    messages: [
-      { role: 'system', content: prompts.system },
-      { role: 'user', content: prompts.user }
-    ]
-  };
-  if (useJsonMode) body.response_format = { type: 'json_object' };
+  var adapter = providerRegistry.resolve(provider.endpoint);
+  var request = adapter.buildRequest(provider, prompts, useJsonMode);
 
-  var headers = { 'Content-Type': 'application/json' };
-  if (provider.apiKey) headers['Authorization'] = 'Bearer ' + provider.apiKey;
-
-  var apiRes = await fetch(provider.endpoint, {
+  var apiRes = await fetch(request.url, {
     method: 'POST',
-    headers: headers,
-    body: JSON.stringify(body)
+    headers: request.headers,
+    body: JSON.stringify(request.body)
   });
   var data = await apiRes.json().catch(function(){ return {}; });
-  return { res: apiRes, data: data };
+  return { res: apiRes, data: data, adapter: adapter };
 }
 
 function buildApp(options){
@@ -394,7 +388,8 @@ function buildApp(options){
       var attempt = await callProvider(provider, prompts, provider.jsonMode);
 
       // Some OpenAI-compatible servers reject response_format — retry without it.
-      if (!attempt.res.ok && attempt.res.status === 400 && provider.jsonMode){
+      if (!attempt.res.ok && attempt.res.status === 400 && provider.jsonMode &&
+          attempt.adapter.retryWithoutJsonMode){
         var errMsg = (attempt.data.error && attempt.data.error.message) || '';
         if (/response_format|json_object/i.test(errMsg)){
           attempt = await callProvider(provider, prompts, false);
@@ -402,18 +397,14 @@ function buildApp(options){
       }
 
       if (!attempt.res.ok){
-        if (attempt.res.status === 429){
-          var msg429 = (attempt.data.error && attempt.data.error.message) || '';
-          var match = msg429.match(/try again in ([\d.]+)s/);
-          var retryAfterHeader = parseFloat(attempt.res.headers.get('retry-after'));
-          var retryAfter = match ? parseFloat(match[1]) : (retryAfterHeader || 10);
-          return res.status(429).json({ error: t('edit.rate-limit'), retryAfter: retryAfter });
+        var mapped = attempt.adapter.mapError(attempt.res, attempt.data);
+        if (mapped && mapped.retryAfter !== undefined){
+          return res.status(429).json({ error: t('edit.rate-limit'), retryAfter: mapped.retryAfter });
         }
         throw new Error((attempt.data.error && attempt.data.error.message) || t('edit.api-error'));
       }
 
-      var content = attempt.data.choices && attempt.data.choices[0] &&
-        attempt.data.choices[0].message && attempt.data.choices[0].message.content || '';
+      var content = attempt.adapter.parseResponse(attempt.data);
       var result = parseModelResponse(content);
 
       if (result.warn) return res.json({ warn: result.warn });

@@ -15,6 +15,9 @@ var fs = require('fs');
 var path = require('path');
 var designCheck = require('../lib/design-check.js');
 var designTokens = require('../lib/design-tokens.js');
+var configLib = require('../lib/config.js');
+var ui = require('../lib/cli-ui.js');
+var prompts = require('prompts');
 
 var LINT_EXTENSIONS = ['.css', '.html', '.htm', '.js', '.jsx', '.ts', '.tsx', '.vue', '.svelte'];
 var LINT_IGNORE_DIRS = ['node_modules', '.git', 'dist', 'build', '.next', '.cache', 'coverage', '.ai-editor'];
@@ -164,6 +167,197 @@ function cmdAgentsInit(){
   }
 }
 
+function parseFlag(argv, flag){
+  var idx = argv.indexOf(flag);
+  if (idx === -1 || idx + 1 >= argv.length) return null;
+  return argv[idx + 1];
+}
+
+function cmdConfig(argv){
+  var root = resolveProjectRoot();
+  var isGlobal = argv.indexOf('--global') !== -1;
+  var isShow = argv.indexOf('--show') !== -1;
+  var scope = isGlobal ? 'global' : 'local';
+
+  // --show: display current config with branded output
+  if (isShow){
+    ui.banner();
+    var local = configLib.loadConfig(root);
+    var globalPath = configLib.globalConfigPath();
+    var global_ = (function(){ try { return JSON.parse(fs.readFileSync(globalPath, 'utf8')); } catch(e){ return null; }})();
+    var chalk = ui.chalk;
+
+    ui.info('Config local: ' + ui.dim(configLib.localConfigPath(root)));
+    ui.info('Config global: ' + ui.dim(globalPath));
+    ui.gap();
+
+    if (local.provider || local.endpoint || local.model || local.apiKey){
+      ui.kvLine('Provider', local.provider || ui.dim('(nenhum)'));
+      ui.kvLine('Endpoint', local.endpoint || ui.dim('(nenhum)'));
+      ui.kvLine('Model', local.model || ui.dim('(nenhum)'));
+      if (local.apiKey) ui.kvLine('API Key', local.apiKey.slice(0, 8) + '...');
+    } else {
+      ui.warning('Nenhuma config local encontrada.');
+    }
+    ui.divider();
+    if (global_ && (global_.provider || global_.endpoint || global_.model || global_.apiKey)){
+      ui.kvLine('Provider (global)', global_.provider || ui.dim('(nenhum)'));
+      ui.kvLine('Endpoint (global)', global_.endpoint || ui.dim('(nenhum)'));
+      ui.kvLine('Model (global)', global_.model || ui.dim('(nenhum)'));
+      if (global_.apiKey) ui.kvLine('API Key (global)', global_.apiKey.slice(0, 8) + '...');
+    } else {
+      ui.warning('Nenhuma config global encontrada.');
+    }
+    ui.gap();
+    var fileConfig = configLib.resolveConfig(root, {});
+    if (fileConfig.provider || fileConfig.endpoint){
+      ui.info('Resolução ativa:');
+      ui.kvLine('Provider', fileConfig.provider || ui.dim('(nenhum)'));
+      ui.kvLine('Endpoint', fileConfig.endpoint || ui.dim('(nenhum)'));
+      ui.kvLine('Model', fileConfig.model || ui.dim('(nenhum)'));
+    }
+    return;
+  }
+
+  // --provider flag: direct mode (no prompts, with branded output)
+  var flagProvider = parseFlag(argv, '--provider');
+  var flagModel = parseFlag(argv, '--model');
+  var flagKey = parseFlag(argv, '--key');
+  var flagEndpoint = parseFlag(argv, '--endpoint');
+
+  if (flagProvider || flagEndpoint){
+    ui.banner();
+    var preset = configLib.PROVIDER_PRESETS.find(function(p){ return p.id === flagProvider; });
+    var data = {
+      provider: flagProvider || 'custom',
+      endpoint: flagEndpoint || (preset ? preset.endpoint : ''),
+      model: flagModel || (preset ? preset.defaultModel : ''),
+      apiKey: flagKey || ''
+    };
+    var spin = ui.spinner('Salvando configuração...');
+    var saved = configLib.saveConfig(root, scope, data);
+    spin.succeed('Config salva em ' + saved);
+    ui.gap();
+    ui.kvLine('Provider', data.provider);
+    ui.kvLine('Endpoint', data.endpoint);
+    ui.kvLine('Model', data.model);
+    if (data.apiKey) ui.kvLine('API Key', data.apiKey.slice(0, 8) + '...');
+    ui.gap();
+    ui.success('Próximo passo: ' + ui.chalk.cyan('npx visual-ai-editor start'));
+    return;
+  }
+
+  // Interactive mode — full branded experience
+  async function run(){
+    ui.banner();
+    ui.info('Configuração do provider de IA');
+    ui.gap();
+
+    // 1. Select provider
+    var providerResult = await prompts({
+      type: 'select',
+      name: 'value',
+      message: 'Provider:',
+      choices: configLib.PROVIDER_PRESETS.map(function(p){
+        return { title: p.name, value: p.id };
+      }),
+      initial: 0
+    });
+    if (providerResult.value === undefined){ ui.gap(); return; }
+
+    var preset = configLib.PROVIDER_PRESETS.find(function(p){ return p.id === providerResult.value; });
+    if (!preset){ ui.error('Provider inválido.'); return; }
+
+    ui.gap();
+
+    // 2. Select/enter model
+    var model = '';
+    if (preset.models.length > 0){
+      var modelResult = await prompts({
+        type: 'select',
+        name: 'value',
+        message: 'Modelo (' + preset.name + '):',
+        choices: preset.models.map(function(m){
+          return { title: m + (m === preset.defaultModel ? '  (padrão)' : ''), value: m };
+        }),
+        initial: 0
+      });
+      if (modelResult.value === undefined){ ui.gap(); return; }
+      model = modelResult.value;
+    } else {
+      var modelText = await prompts({
+        type: 'text',
+        name: 'value',
+        message: 'Modelo:',
+        initial: preset.defaultModel || ''
+      });
+      if (modelText.value === undefined){ ui.gap(); return; }
+      model = modelText.value;
+    }
+
+    ui.gap();
+
+    // 3. API Key (password input — hidden)
+    var apiKey = '';
+    if (preset.needsKey){
+      var keyResult = await prompts({
+        type: 'password',
+        name: 'value',
+        message: 'API Key (' + preset.name + '):'
+      });
+      if (keyResult.value === undefined){ ui.gap(); return; }
+      apiKey = keyResult.value;
+      if (!apiKey){
+        ui.warning('Sem API key — provider remoto não funcionará.');
+        ui.gap();
+      }
+    }
+
+    // 4. Custom endpoint
+    var endpoint = preset.endpoint;
+    if (preset.id === 'custom'){
+      var epResult = await prompts({
+        type: 'text',
+        name: 'value',
+        message: 'Endpoint URL:',
+        validate: function(v){ return v ? true : 'Endpoint é obrigatório'; }
+      });
+      if (epResult.value === undefined){ ui.gap(); return; }
+      endpoint = epResult.value;
+    }
+
+    ui.gap();
+
+    // 5. Save
+    var data = {
+      provider: preset.id,
+      endpoint: endpoint,
+      model: model,
+      apiKey: apiKey
+    };
+
+    var spin = ui.spinner('Salvando configuração...');
+    var saved = configLib.saveConfig(root, scope, data);
+    spin.succeed('Config salva em ' + saved);
+
+    ui.gap();
+    ui.divider();
+    ui.kvLine('Provider', data.provider);
+    ui.kvLine('Endpoint', data.endpoint);
+    ui.kvLine('Model', data.model);
+    if (data.apiKey) ui.kvLine('API Key', data.apiKey.slice(0, 8) + '...');
+    ui.divider();
+    ui.gap();
+    ui.success('Próximo passo: ' + ui.chalk.cyan('npx visual-ai-editor start'));
+    ui.gap();
+  }
+
+  run().catch(function(e){
+    ui.error('Erro: ' + e.message);
+    process.exitCode = 1;
+  });
+}
+
 function openBrowser(url){
   var spawn = require('child_process').spawn;
   var cmd, args;
@@ -193,25 +387,33 @@ function cmdStart(argv){
 
   try { require('dotenv').config({ path: envPath }); } catch (e) { /* env vars via OS */ }
 
+  // Merge config.json into env — config.json values fill in missing env vars
+  var fileConfig = configLib.loadConfig(root);
+  if (fileConfig.endpoint && !process.env.AI_ENDPOINT) process.env.AI_ENDPOINT = fileConfig.endpoint;
+  if (fileConfig.model && !process.env.AI_MODEL) process.env.AI_MODEL = fileConfig.model;
+  if (fileConfig.apiKey && !process.env.AI_API_KEY) process.env.AI_API_KEY = fileConfig.apiKey;
+
   var keyState = envInit.checkApiKey(process.env);
 
-  if (created.action === 'created'){
+  if (created.action === 'created' && !keyState.ok){
     console.log('');
     console.log('[visual-ai-editor] Criei ' + created.path);
     console.log('');
-    console.log('  1. Abra o arquivo e cole sua chave em AI_API_KEY=');
-    console.log('     (qualquer provider compatível com OpenAI — o free tier da Groq');
-    console.log('      é o caminho mais rápido: https://console.groq.com)');
-    console.log('  2. Rode de novo:  npx visual-ai-editor start');
+    console.log('  Você tem duas opções para configurar o provider:');
     console.log('');
-    console.log('  Usando Ollama/LM Studio local? Descomente o AI_ENDPOINT correspondente');
-    console.log('  no .env — não precisa de chave.');
+    console.log('  1. Cole a chave em AI_API_KEY= no .env');
+    console.log('     (Groq free tier: https://console.groq.com)');
+    console.log('');
+    console.log('  2. Rode o config interativo:');
+    console.log('     npx visual-ai-editor config');
+    console.log('     (suporta Groq, OpenAI, Anthropic/Claude, Ollama, LM Studio)');
+    console.log('');
     if (keyState.ok) console.log('\n  (Detectei uma chave no ambiente do sistema — subindo mesmo assim.)');
     if (!keyState.ok){ process.exitCode = 1; return; }
   } else if (!keyState.ok){
-    console.log('[visual-ai-editor] ' + envPath + ' existe, mas AI_API_KEY está vazia.');
-    console.log('Cole sua chave lá e rode de novo. (Ollama/LM Studio local dispensam chave —');
-    console.log('descomente o AI_ENDPOINT correspondente no .env.)');
+    console.log('[visual-ai-editor] Nenhuma configuração de provider encontrada.');
+    console.log('Cole a chave em AI_API_KEY no .env, ou rode:');
+    console.log('  npx visual-ai-editor config');
     process.exitCode = 1;
     return;
   }
@@ -236,6 +438,9 @@ function printUsage(){
   console.log('Comandos:');
   console.log('  start          (padrão) Sobe o editor no diretório atual — cria .env na primeira vez');
   console.log('                 Flags: --port <n>  --no-inject  --no-open');
+  console.log('  config         Configura o provider de IA (interativo ou via flags)');
+  console.log('                 Flags: --provider <id>  --model <name>  --key <api-key>');
+  console.log('                        --endpoint <url>  --global  --local  --show');
   console.log('  design:check   Procura DESIGN.md no projeto e reporta cobertura das 11 seções');
   console.log('  design:init    Gera DESIGN.prompt.md — um prompt guiado para criar o DESIGN.md com IA');
   console.log('  design:lint    Procura cores fora da paleta do DESIGN.md em CSS/HTML/JS do projeto');
@@ -249,6 +454,9 @@ switch (command){
   case undefined:
   case 'start':
     cmdStart(process.argv.slice(3));
+    break;
+  case 'config':
+    cmdConfig(process.argv.slice(3));
     break;
   case 'design:check':
     cmdDesignCheck();
