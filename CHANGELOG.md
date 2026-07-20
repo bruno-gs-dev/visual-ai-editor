@@ -1,5 +1,32 @@
 # Changelog
 
+## Unreleased
+
+### Fixed (documentation)
+Closes the remaining gaps found by the same audit that produced 1.6.1 — all of
+these describe behavior that has shipped for several versions but had lost its
+documentation in a README rewrite.
+
+- **"Saving Edits" restored.** Save behaves in two fundamentally different ways
+  and neither was explained: static pages get surgical `{ before, after }`
+  patches (with a documented fallback to a full-file write when the `before`
+  text can't be located), while React/Vue pages write **nothing** to source and
+  export a manifest to `.ai-editor/pending-changes.md` instead. Without this,
+  clicking Save on a React page and finding the JSX unchanged reads as a bug.
+- **Event-listener caveat restored.** Applying an edit uses
+  `el.replaceWith(newEl)`, which drops listeners bound with `addEventListener`
+  — silently, with no console error. Documents `onAfterApply`/`onAfterUndo` as
+  the re-binding hook, with an example.
+- **"AI Providers" restored.** The `provider: 'ollama' | 'lmstudio'` presets,
+  `requiresApiKey`, the `AI_ENDPOINT`/`AI_MODEL` env vars, the note on model
+  capability, and the still-honored legacy `GROQ_API_KEY`/`GROQ_MODEL`
+  fallback.
+- **CSS variables restored** — `--font`, `--warning` and `--lg` are read by
+  `styles/ai-editor.css` and were undocumented.
+- Endpoint table now states the real response shapes (`/api/edit` can return
+  `{ warn, violations, html }`); added the agent handoff to the feature table
+  and Providers/Saving/Security to the header nav.
+
 ## 1.6.1
 
 ### Added

@@ -9,7 +9,7 @@ Select any element on the page, describe what you want to change in natural lang
 [![npm version](https://img.shields.io/npm/v/visual-ai-editor?color=4f46e5&label=version)](https://www.npmjs.com/package/visual-ai-editor)
 [![license](https://img.shields.io/npm/l/visual-ai-editor)](LICENSE)
 
-[Demo](#demo) · [Install](#install) · [Quick Start](#quick-start) · [Frameworks](#usage-by-framework) · [Design System](#design-system) · [API](#api-reference)
+[Demo](#demo) · [Install](#install) · [Quick Start](#quick-start) · [Providers](#ai-providers) · [Frameworks](#usage-by-framework) · [Design System](#design-system) · [Saving](#saving-edits) · [API](#api-reference) · [Security](#security)
 
 </div>
 
@@ -95,6 +95,7 @@ Cobertura completa — todas as 11 seções recomendadas foram encontradas.
 | 🤖 **AI-powered edits** | Describe changes in natural language — any OpenAI-compatible provider works |
 | 🎨 **Design system enforcement** | AI follows your `DESIGN.md` — deterministic palette check catches what the model misses |
 | 💾 **Surgical saves** | Patches your source file in-place with 1-line diffs; auto-backup before every save |
+| 🤝 **AI-agent handoff** | React/Vue pages export a change manifest instead of overwriting rendered output |
 | ⌨️ **Undo / Redo** | `Ctrl+Z` / `Ctrl+Y` — zero tokens, instant |
 | 🌐 **Framework-agnostic** | Works with static HTML, React, Angular, Vue, or any framework |
 | 🌍 **EN / pt-BR UI** | Auto-detected from `<html lang>`, or set explicitly |
@@ -175,6 +176,63 @@ explains this tool to any AI coding agent (Claude Code, Cursor, …): the API co
 `AGENTS.md`, only our own block is appended (and updated in place on later upgrades) —
 **your existing content is never touched.** If your npm setup blocks install scripts, run
 `npx visual-ai-editor agents:init` to get the same result.
+
+---
+
+## AI Providers
+
+Any OpenAI-compatible chat-completions API works. Configure it three ways, in order of
+precedence: the `ai` option to `startServer()`, then environment variables, then the
+built-in default (Groq, `llama-3.3-70b-versatile`).
+
+**Via `.env`** — no code changes:
+
+```
+AI_ENDPOINT=https://api.openai.com/v1/chat/completions
+AI_MODEL=gpt-4o-mini
+AI_API_KEY=sk-...
+```
+
+**Via code:**
+
+```js
+startServer({
+  ai: {
+    endpoint: 'https://api.openai.com/v1/chat/completions',
+    model: 'gpt-4o-mini',
+    apiKey: process.env.OPENAI_API_KEY
+  }
+});
+```
+
+### Local models (Ollama, LM Studio)
+
+Local providers have a shorthand, so you don't type the endpoint URL:
+
+```js
+startServer({ ai: { provider: 'ollama', model: 'llama3.2' } });   // pull it first
+startServer({ ai: { provider: 'lmstudio', model: 'your-loaded-model' } });
+```
+
+`'ollama'` resolves to `http://localhost:11434/v1/chat/completions`, `'lmstudio'` to
+`http://localhost:1234/v1/chat/completions`. An explicit `endpoint` always wins over the
+preset. No API key is required — there's nothing to authenticate against on localhost, and
+the server auto-detects this from the endpoint's host for any `localhost`/`127.0.0.1` URL,
+preset or not. Override it either direction with `requiresApiKey: true | false`.
+
+**A note on model capability.** The plumbing (no-auth requests, error propagation,
+structured-JSON parsing) works regardless of model size. Response *quality* doesn't. A
+capable model — Groq's 70B, GPT-4o-mini, or a comparable local model your hardware can
+run — reliably follows the full instruction set (`DESIGN.md` compliance, force mode, the
+`{html}`/`{warn}` JSON contract). A 3B local model, in testing, sometimes returned
+truncated or malformed JSON once a project's `DESIGN.md` was in the system prompt. That's
+a model limit, not a bug to route around: if edits come back empty or malformed on a local
+model, try a larger one before assuming something is broken.
+
+### Legacy environment variables
+
+`GROQ_API_KEY` and `GROQ_MODEL` are still honored as a fallback, so setups from earlier
+versions keep working — there's no need to rename anything.
 
 ---
 
@@ -316,6 +374,66 @@ Try it end-to-end in [`demo/`](demo/) — see [Demo](#demo) above.
 
 ---
 
+## Saving Edits
+
+**Save** does one of two very different things, depending on the page.
+
+### Static / server-rendered HTML — surgical patches
+
+The client sends `{ before, after }` pairs of exactly the HTML that changed to
+`/api/save`, which locates that text in your source file and replaces just it:
+
+- Formatting, comments and indentation everywhere else are untouched.
+- Git diffs stay small — one line changed, not the whole file.
+- A timestamped backup goes to `.ai-editor/history/` before every save (capped at the 100
+  most recent per file; `.ai-editor/` belongs in `.gitignore`).
+- **If a patch's `before` text can't be located** — you hand-edited the file since the
+  last save, for example — that save falls back to writing the full page snapshot. The
+  status bar tells you which mode was used, so a silent full-file overwrite never
+  surprises you.
+- Multi-page projects: the browser's `location.pathname` is sent automatically as `page`,
+  and the server resolves it to a file inside `staticDir`, rejecting any path that escapes it.
+
+### Framework pages (React / Vue) — agent handoff
+
+Writing rendered DOM back over JSX or a template would corrupt it, so nothing is written
+to your source. Instead the edit is appended to `.ai-editor/pending-changes.md` via
+`/api/handoff` — one entry per edit, with the detected source location, your instruction,
+and the before/after HTML.
+
+**This means clicking Save on a React page does not change your `.jsx`.** Open that
+manifest with an AI coding agent (Claude Code, Cursor, …), ask it to apply the listed
+changes to the real source, and delete each entry as it lands.
+
+The source location comes from React's `_debugSource` fiber data or Vue 3's `__file`
+metadata when available — or from a `data-ai-source="path/to/File.jsx:42"` attribute you
+add yourself.
+
+### Event listeners after an edit
+
+Applying an AI edit (and redo) replaces the element via `el.replaceWith(newEl)`, which
+**drops any listener attached directly to the old element with `addEventListener`**. The
+element still looks right and simply stops responding — no console error.
+
+Frameworks re-bind on re-render, so React/Vue/Angular apps don't need to care (and
+framework pages go through the handoff flow above anyway). Plain `<script>` wiring on a
+static page does. Re-run it in `onAfterApply`, scoped to the returned elements:
+
+```js
+init({
+  apiBase: '/api',
+  onAfterApply: function (elements) {
+    elements.forEach(function (el) {
+      if (el.matches('.chip')) el.addEventListener('click', onChipClick);
+    });
+  }
+});
+```
+
+`onAfterUndo` is the same hook for the undo path.
+
+---
+
 ## Keyboard Shortcuts
 
 | Action | Shortcut |
@@ -390,10 +508,23 @@ startServer({
 
 | Method | Endpoint | Description |
 |--------|----------|-------------|
-| `POST` | `/api/edit` | Send HTML + instruction → AI returns `{ html }` or `{ warn }` |
-| `GET` | `/api/design` | Returns `{ md, exists, palette }` |
-| `POST` | `/api/save` | Apply patches surgically to source file |
-| `POST` | `/api/handoff` | Append change manifest for framework pages |
+| `POST` | `/api/edit` | Send HTML + instruction → `{ html }`, `{ warn }`, or `{ warn, violations, html }` on a palette conflict |
+| `GET` | `/api/design` | Returns `{ md, exists, palette }` — `palette` is the colors extracted from `DESIGN.md` |
+| `POST` | `/api/save` | Applies `patches` surgically to the source file, falling back to writing `html` in full |
+| `POST` | `/api/handoff` | Appends a change manifest to `.ai-editor/pending-changes.md` for framework pages |
+
+### CSS variables
+
+The editor's own UI reads three variables from your page, each with a fallback — set them
+to match your product's look, or ignore them entirely:
+
+```css
+:root {
+  --font: 'Inter', sans-serif;   /* Font family for the toolbar and panel */
+  --warning: #f4b400;            /* Color of the design-system warning state */
+  --lg: 16px;                    /* Toolbar distance from the left edge */
+}
+```
 
 ---
 
