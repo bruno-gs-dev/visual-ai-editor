@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 1.6.2
 
 ### Fixed (documentation)
 Closes the remaining gaps found by the same audit that produced 1.6.1 — all of

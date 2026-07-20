@@ -2,4 +2,3 @@ node_modules/
 .env
 *.tgz
 .ai-editor/
-docs/safe-guard/
