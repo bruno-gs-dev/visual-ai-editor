@@ -405,7 +405,7 @@ function cmdConfig(argv){
     }
   }
 
-  run().catch(function(e){
+  return run().catch(function(e){
     ui.error('Erro: ' + e.message);
     process.exitCode = 1;
   });
