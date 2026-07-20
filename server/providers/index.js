@@ -7,9 +7,10 @@
  */
 
 var anthropicAdapter = require('./anthropic');
+var opencodeAdapter = require('./opencode');
 var openaiAdapter = require('./openai');
 
-var adapters = [anthropicAdapter, openaiAdapter];
+var adapters = [anthropicAdapter, opencodeAdapter, openaiAdapter];
 
 /**
  * Resolve the adapter for a given endpoint.

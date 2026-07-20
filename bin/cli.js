@@ -2,7 +2,7 @@
 /**
  * visual-ai-editor CLI
  *
- *   npx visual-ai-editor [start]        — zero-config: create .env on first run, then serve
+ *   npx visual-ai-editor [start]        — zero-config: interactive config on first run, then serve
  *                                         the project with the editor auto-injected
  *                                         (flags: --port <n>, --no-inject, --no-open)
  *   npx visual-ai-editor design:check   — locate DESIGN.md and report section coverage
@@ -273,7 +273,39 @@ function cmdConfig(argv){
 
     // 2. Select/enter model
     var model = '';
-    if (preset.models.length > 0){
+    if (preset.id === 'ollama'){
+      // Dynamic Ollama model listing
+      var spin = ui.spinner('Buscando modelos locais no Ollama...');
+      var ollamaResult = await configLib.fetchOllamaModels(preset.endpoint);
+      spin.stop();
+
+      if (ollamaResult.ok && ollamaResult.models.length > 0){
+        ui.gap();
+        var modelResult = await prompts({
+          type: 'select',
+          name: 'value',
+          message: 'Modelo (Ollama local):',
+          choices: ollamaResult.models.map(function(m){
+            return { title: m.label, value: m.name };
+          }),
+          initial: 0
+        });
+        if (modelResult.value === undefined){ ui.gap(); return; }
+        model = modelResult.value;
+      } else {
+        ui.warning('Ollama não está rodando (' + preset.endpoint + ')');
+        ui.info('Inicie o Ollama e tente novamente, ou digite o modelo manualmente.');
+        ui.gap();
+        var modelText = await prompts({
+          type: 'text',
+          name: 'value',
+          message: 'Modelo (Ollama local):',
+          initial: ''
+        });
+        if (modelText.value === undefined){ ui.gap(); return; }
+        model = modelText.value;
+      }
+    } else if (preset.models.length > 0){
       var modelResult = await prompts({
         type: 'select',
         name: 'value',
@@ -400,13 +432,15 @@ function cmdStart(argv){
   var noInject = argv.indexOf('--no-inject') !== -1;
   var noOpen = argv.indexOf('--no-open') !== -1;
 
-  var created = envInit.ensureEnvFile(root);
   var gi = envInit.ensureGitignore(root);
   if (gi.action !== 'unchanged'){
     console.log('[visual-ai-editor] .gitignore ' + (gi.action === 'created' ? 'criado' : 'atualizado') + ' — .env nunca deve ir para o git.');
   }
 
-  try { require('dotenv').config({ path: envPath }); } catch (e) { /* env vars via OS */ }
+  // Load .env if it exists (backward compat), but don't auto-create it
+  if (fs.existsSync(envPath)){
+    try { require('dotenv').config({ path: envPath }); } catch (e) { /* env vars via OS */ }
+  }
 
   // Merge config.json into env — config.json values fill in missing env vars
   var fileConfig = configLib.loadConfig(root);
@@ -467,7 +501,7 @@ function printUsage(){
   console.log('Uso: visual-ai-editor [comando]');
   console.log('');
   console.log('Comandos:');
-  console.log('  start          (padrão) Sobe o editor no diretório atual — cria .env na primeira vez');
+  console.log('  start          (padrão) Sobe o editor no diretório atual — config interativa na primeira vez');
   console.log('                 Flags: --port <n>  --no-inject  --no-open');
   console.log('  config         Configura o provider de IA (interativo ou via flags)');
   console.log('                 Flags: --provider <id>  --model <name>  --key <api-key>');

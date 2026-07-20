@@ -40,7 +40,7 @@ function main(){
 
   console.log('');
   console.log('[visual-ai-editor] Pronto! Para começar:  npx visual-ai-editor start');
-  console.log('[visual-ai-editor] (primeira execução cria o .env — cole sua chave lá e rode de novo)');
+  console.log('[visual-ai-editor] (primeira execução abre o config interativo — escolha um provider e chave)');
   if (!found){
     console.log('[visual-ai-editor] Opcional: "npx visual-ai-editor design:init" gera um prompt guiado');
     console.log('[visual-ai-editor] de DESIGN.md e melhora a precisão das edições feitas pela IA.');
