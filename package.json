@@ -28,6 +28,7 @@
     "templates/",
     "docs/",
     "!docs/safe-guard/",
+    "!docs/gifs/",
     "bin/",
     "lib/",
     "types/",
@@ -67,7 +68,8 @@
     "express": "^4.19.2"
   },
   "devDependencies": {
-    "marked": "^18.0.6"
+    "marked": "^18.0.6",
+    "playwright": "^1.61.1"
   },
   "repository": {
     "type": "git",

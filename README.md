@@ -17,10 +17,32 @@ Select any element on the page, describe what you want to change in natural lang
 
 ## Demo
 
-[`demo/`](demo/) is a runnable page — a fictional analytics landing page with its own
-[`DESIGN.md`](demo/DESIGN.md). It exists so you can see the design-system enforcement do
-something real: the page uses a 17-color palette, and the demo doc documents it, so an
-off-palette request gets blocked by the server rather than by the model's good intentions.
+Both recordings below are the real editor driven against [`demo/`](demo/) — real
+selections, real `/api/edit` round-trips, real responses. Only the cursor is drawn in,
+because a browser recording can't capture the OS pointer.
+
+### Edit an element
+
+Pick **Select**, click a feature card, type `add a warning badge saying Beta`, press **Apply**.
+
+![Selecting a card and adding a Beta badge with a natural-language instruction](https://raw.githubusercontent.com/bruno-gs-dev/visual-ai-editor/main/docs/gifs/basic-edit.gif)
+
+The card re-renders in place using the `.badge.highlight` class from the demo's design
+system — the AI reused it because [`DESIGN.md`](demo/DESIGN.md) was in its system prompt,
+not because the instruction mentioned it. Hit **Save** and the change lands in
+`demo/index.html` as a small diff, with the original copied to `.ai-editor/history/` first.
+
+### Hit the palette guard
+
+Same flow, but ask for `change the background to pink`.
+
+![The server rejecting an off-palette color and offering Apply anyway](https://raw.githubusercontent.com/bruno-gs-dev/visual-ai-editor/main/docs/gifs/design-warning.gif)
+
+Pink isn't in the demo's 17-color palette, so the **server** rejects the response — not the
+model's good intentions. The **Apply anyway** button reuses the HTML the model already
+returned, so overriding costs zero extra tokens.
+
+### Run it yourself
 
 ```bash
 git clone https://github.com/bruno-gs-dev/visual-ai-editor
@@ -39,24 +61,10 @@ First run writes a `.env` — paste an API key into `AI_API_KEY=` and run it aga
 [visual-ai-editor] Toolbar injetada automaticamente em qualquer .html servido.
 ```
 
-The browser opens with the toolbar on the left. Three things worth trying, in order:
-
-**1. Edit an element.** Pick **Select**, click one of the feature cards, type
-`add a warning badge saying Beta`, press **Apply**. The card re-renders in place using the
-`.badge.highlight` class from the demo's design system — the AI reused it because
-`DESIGN.md` was in its system prompt. Hit **Save** and the change lands in
-`demo/index.html` as a small diff, with the original copied to `.ai-editor/history/` first.
-
-**2. Hit the palette guard.** Select anything and ask for
-`change the background to pink`. Pink isn't in the demo's palette, so the server rejects
-the response and shows a warning with an **Apply anyway** button. That button reuses the
-HTML the model already returned — overriding costs zero extra tokens.
-
-**3. Select more than one thing.** **Area selection** drags a rectangle over the four
-metric tiles; **Pencil** lassoes freehand around a group. With several elements selected,
-`make these use the secondary button style` rewrites all of them in one request.
-
-`Ctrl+Z` undoes any of it instantly and without an API call.
+One more thing worth trying that the GIFs don't cover: **Area selection** drags a rectangle
+over the four metric tiles, and **Pencil** lassoes freehand around a group. With several
+elements selected, `make these use the secondary button style` rewrites all of them in one
+request. `Ctrl+Z` undoes any of it instantly and without an API call.
 
 The demo folder also gives the design commands something real to report on:
 
