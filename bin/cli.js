@@ -177,6 +177,7 @@ function cmdConfig(argv){
   var root = resolveProjectRoot();
   var isGlobal = argv.indexOf('--global') !== -1;
   var isShow = argv.indexOf('--show') !== -1;
+  var isAuto = argv.indexOf('--auto') !== -1;
   var scope = isGlobal ? 'global' : 'local';
 
   // --show: display current config with branded output
@@ -348,8 +349,28 @@ function cmdConfig(argv){
     if (data.apiKey) ui.kvLine('API Key', data.apiKey.slice(0, 8) + '...');
     ui.divider();
     ui.gap();
-    ui.success('Próximo passo: ' + ui.chalk.cyan('npx visual-ai-editor start'));
-    ui.gap();
+
+    // 6. Ask to start (skip in --auto mode)
+    if (isAuto){
+      ui.gap();
+      ui.success('Configuração concluída!');
+      ui.gap();
+    } else {
+      var startResult = await prompts({
+        type: 'confirm',
+        name: 'value',
+        message: 'Iniciar o editor agora?',
+        initial: true
+      });
+      ui.gap();
+
+      if (startResult.value){
+        cmdStart([]);
+      } else {
+        ui.success('Próximo passo: ' + ui.chalk.cyan('npx visual-ai-editor start'));
+        ui.gap();
+      }
+    }
   }
 
   run().catch(function(e){
@@ -395,40 +416,50 @@ function cmdStart(argv){
 
   var keyState = envInit.checkApiKey(process.env);
 
-  if (created.action === 'created' && !keyState.ok){
-    console.log('');
-    console.log('[visual-ai-editor] Criei ' + created.path);
-    console.log('');
-    console.log('  Você tem duas opções para configurar o provider:');
-    console.log('');
-    console.log('  1. Cole a chave em AI_API_KEY= no .env');
-    console.log('     (Groq free tier: https://console.groq.com)');
-    console.log('');
-    console.log('  2. Rode o config interativo:');
-    console.log('     npx visual-ai-editor config');
-    console.log('     (suporta Groq, OpenAI, Anthropic/Claude, Ollama, LM Studio)');
-    console.log('');
-    if (keyState.ok) console.log('\n  (Detectei uma chave no ambiente do sistema — subindo mesmo assim.)');
-    if (!keyState.ok){ process.exitCode = 1; return; }
-  } else if (!keyState.ok){
-    console.log('[visual-ai-editor] Nenhuma configuração de provider encontrada.');
-    console.log('Cole a chave em AI_API_KEY no .env, ou rode:');
-    console.log('  npx visual-ai-editor config');
-    process.exitCode = 1;
+  if (!keyState.ok){
+    // No config found — launch interactive config
+    ui.banner();
+    ui.info('Nenhuma configuração de provider encontrada.');
+    ui.gap();
+    ui.info('Vamos configurar agora...');
+    ui.gap();
+
+    cmdConfig(['--auto']).then(function(){
+      // Re-check after config
+      try { require('dotenv').config({ path: envPath }); } catch (e) {}
+      var fc = configLib.loadConfig(root);
+      if (fc.endpoint && !process.env.AI_ENDPOINT) process.env.AI_ENDPOINT = fc.endpoint;
+      if (fc.model && !process.env.AI_MODEL) process.env.AI_MODEL = fc.model;
+      if (fc.apiKey && !process.env.AI_API_KEY) process.env.AI_API_KEY = fc.apiKey;
+      var ks = envInit.checkApiKey(process.env);
+      if (!ks.ok){
+        ui.error('Configuração incompleta. Rode novamente: npx visual-ai-editor config');
+        process.exitCode = 1;
+        return;
+      }
+      doStart(root, argv, envPath, !noInject, !noOpen, !isNaN(portFlag) ? portFlag : undefined);
+    }).catch(function(e){
+      ui.error('Erro na configuração: ' + e.message);
+      process.exitCode = 1;
+    });
     return;
   }
 
+  doStart(root, argv, envPath, !noInject, !noOpen, !isNaN(portFlag) ? portFlag : undefined);
+}
+
+function doStart(root, argv, envPath, inject, noOpen, port){
   var startServer = require('../server/index.js').startServer;
   var result = startServer({
-    port: !isNaN(portFlag) ? portFlag : undefined,
+    port: port || undefined,
     envPath: envPath,
     staticDir: root,
-    inject: !noInject
+    inject: inject
   });
 
   var url = 'http://localhost:' + result.port;
   console.log('[visual-ai-editor] Editor no ar: ' + url);
-  if (!noInject) console.log('[visual-ai-editor] Toolbar injetada automaticamente em qualquer .html servido (desligue com --no-inject).');
+  if (inject) console.log('[visual-ai-editor] Toolbar injetada automaticamente em qualquer .html servido (desligue com --no-inject).');
   if (!noOpen) openBrowser(url);
 }
 
