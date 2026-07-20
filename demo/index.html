@@ -1,0 +1,365 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Nimbus Analytics — visual-ai-editor demo</title>
+<style>
+  :root {
+    --bg: #0b0f19;
+    --surface: #131a2a;
+    --surface-2: #1c2438;
+    --border: #263149;
+    --text: #e6ebf5;
+    --muted: #98a3b8;
+    --primary: #6366f1;
+    --primary-hover: #818cf8;
+    --accent: #22d3ee;
+    --success: #34d399;
+    --warning: #fbbf24;
+    --danger: #f87171;
+    --on-primary: #ffffff;
+    --font: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    --mono: ui-monospace, "SF Mono", "Cascadia Code", Consolas, monospace;
+  }
+
+  * { box-sizing: border-box; }
+
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--font);
+    font-size: 16px;
+    line-height: 1.6;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  .wrap { max-width: 1120px; margin: 0 auto; padding: 0 24px; }
+  section { margin-bottom: 96px; }
+
+  /* ---- nav ---- */
+  .nav {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 24px 0; border-bottom: 1px solid var(--border);
+  }
+  .brand { display: flex; align-items: center; gap: 12px; font-weight: 650; letter-spacing: -0.01em; }
+  .brand-mark {
+    width: 32px; height: 32px; border-radius: 8px;
+    background: var(--primary); color: var(--on-primary);
+    display: grid; place-items: center; font-size: 14px; font-weight: 700;
+  }
+  .nav-links { display: flex; align-items: center; gap: 24px; }
+  .nav-links a { color: var(--muted); text-decoration: none; font-size: 14px; }
+  .nav-links a:hover { color: var(--text); }
+
+  /* ---- buttons ---- */
+  .btn {
+    display: inline-block; padding: 12px 20px; border-radius: 12px;
+    background: var(--primary); color: var(--on-primary);
+    font-weight: 600; font-size: 14px; text-decoration: none; border: 1px solid var(--primary);
+    cursor: pointer; transition: background 150ms ease-out;
+  }
+  .btn:hover { background: var(--primary-hover); border-color: var(--primary-hover); }
+  .btn:focus-visible { outline: none; box-shadow: 0 0 0 3px #6366f133; }
+  .btn-secondary {
+    background: transparent; color: var(--text); border: 1px solid var(--border);
+  }
+  .btn-secondary:hover { background: var(--surface-2); border-color: var(--border); }
+
+  /* ---- hero ---- */
+  .hero { padding: 96px 0 0; text-align: center; }
+  .hero h1 {
+    font-size: 52px; line-height: 1.1; letter-spacing: -0.02em;
+    margin: 24px 0 16px; font-weight: 700;
+  }
+  .hero p {
+    color: var(--muted); font-size: 18px; max-width: 620px; margin: 0 auto 32px;
+  }
+  .hero-actions { display: flex; gap: 12px; justify-content: center; flex-wrap: wrap; }
+
+  .eyebrow {
+    display: inline-block; font-size: 12px; font-weight: 600;
+    letter-spacing: 0.08em; text-transform: uppercase; color: var(--accent);
+    background: #22d3ee1f; padding: 4px 12px; border-radius: 999px;
+  }
+
+  /* ---- metrics ---- */
+  .metrics { display: grid; grid-template-columns: repeat(4, 1fr); gap: 24px; }
+  .metric {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: 12px; padding: 24px;
+  }
+  .metric .label {
+    font-size: 12px; font-weight: 600; letter-spacing: 0.08em;
+    text-transform: uppercase; color: var(--muted); margin: 0 0 12px;
+  }
+  .metric .value {
+    font-size: 34px; font-weight: 700; line-height: 1.1;
+    letter-spacing: -0.01em; color: var(--accent); margin: 0;
+  }
+  .metric .delta { font-size: 14px; margin: 12px 0 0; color: var(--success); }
+  .metric .delta.down { color: var(--danger); }
+
+  /* ---- section heads ---- */
+  .section-head { max-width: 620px; margin-bottom: 32px; }
+  .section-head h2 {
+    font-size: 30px; line-height: 1.2; letter-spacing: -0.01em;
+    font-weight: 650; margin: 0 0 12px;
+  }
+  .section-head p { color: var(--muted); margin: 0; }
+
+  /* ---- cards ---- */
+  .cards { display: grid; grid-template-columns: repeat(3, 1fr); gap: 24px; }
+  .card {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: 12px; padding: 24px; box-shadow: 0 1px 2px #00000066;
+    transition: border-color 150ms ease-out;
+  }
+  .card:hover { border-color: var(--primary); }
+  .card h3 { font-size: 18px; font-weight: 600; line-height: 1.3; margin: 0 0 12px; }
+  .card p { color: var(--muted); font-size: 14px; margin: 0; }
+
+  .badge {
+    display: inline-block; font-size: 12px; font-weight: 600;
+    letter-spacing: 0.08em; text-transform: uppercase;
+    background: var(--surface-2); color: var(--muted);
+    padding: 4px 12px; border-radius: 999px; margin-bottom: 12px;
+  }
+  .badge.highlight { color: var(--warning); }
+
+  /* ---- pricing ---- */
+  .pricing { display: grid; grid-template-columns: repeat(3, 1fr); gap: 24px; align-items: start; }
+  .plan {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: 16px; padding: 32px;
+  }
+  .plan.recommended { border-color: var(--primary); box-shadow: 0 12px 32px #0b0f1980; }
+  .plan h3 { font-size: 18px; font-weight: 600; margin: 0 0 8px; }
+  .plan .price { font-size: 34px; font-weight: 700; letter-spacing: -0.01em; margin: 0 0 4px; }
+  .plan .price span { font-size: 14px; font-weight: 400; color: var(--muted); }
+  .plan .plan-note { color: var(--muted); font-size: 14px; margin: 0 0 24px; }
+  .plan ul { list-style: none; padding: 0; margin: 0 0 24px; }
+  .plan li { font-size: 14px; color: var(--muted); padding: 8px 0; display: flex; gap: 12px; }
+  .plan li .check { color: var(--success); }
+  .plan .btn { width: 100%; text-align: center; }
+
+  /* ---- callout ---- */
+  .callout {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: 16px; padding: 32px;
+  }
+  .callout h2 { font-size: 30px; letter-spacing: -0.01em; font-weight: 650; margin: 0 0 12px; }
+  .callout p { color: var(--muted); margin: 0 0 24px; max-width: 620px; }
+  .callout code {
+    font-family: var(--mono); font-size: 14px;
+    background: var(--surface-2); color: var(--accent);
+    padding: 4px 8px; border-radius: 8px;
+  }
+
+  /* ---- try-it panel ---- */
+  .tryit { background: var(--surface-2); border: 1px solid var(--border); border-radius: 16px; padding: 32px; }
+  .tryit h2 { font-size: 30px; font-weight: 650; letter-spacing: -0.01em; margin: 0 0 12px; }
+  .tryit ol { color: var(--muted); font-size: 14px; margin: 0; padding-left: 24px; }
+  .tryit li { padding: 4px 0; }
+  .tryit kbd {
+    font-family: var(--mono); font-size: 12px; background: var(--surface);
+    border: 1px solid var(--border); border-radius: 8px; padding: 4px 8px; color: var(--text);
+  }
+
+  /* ---- footer ---- */
+  footer {
+    border-top: 1px solid var(--border); background: var(--surface);
+    padding: 32px 0; color: var(--muted); font-size: 14px;
+  }
+  footer .wrap { display: flex; justify-content: space-between; gap: 24px; flex-wrap: wrap; }
+
+  @media (max-width: 900px) {
+    .metrics, .cards, .pricing { grid-template-columns: repeat(2, 1fr); }
+    .hero h1 { font-size: 40px; }
+  }
+  @media (max-width: 640px) {
+    .metrics, .cards, .pricing { grid-template-columns: 1fr; }
+    section { margin-bottom: 64px; }
+    .nav-links { display: none; }
+  }
+</style>
+</head>
+<body>
+
+<header class="wrap">
+  <nav class="nav">
+    <div class="brand">
+      <span class="brand-mark">N</span>
+      <span>Nimbus Analytics</span>
+    </div>
+    <div class="nav-links">
+      <a href="#features">Features</a>
+      <a href="#pricing">Pricing</a>
+      <a href="#docs">Docs</a>
+      <a class="btn btn-secondary" href="#start">Sign in</a>
+    </div>
+  </nav>
+</header>
+
+<main class="wrap">
+
+  <section class="hero">
+    <span class="eyebrow">Now with live query replay</span>
+    <h1>Every event your product emits, queryable in one second.</h1>
+    <p>Nimbus ingests your telemetry, keeps a year of raw events, and answers
+       questions in plain SQL — without a warehouse bill that doubles every quarter.</p>
+    <div class="hero-actions">
+      <a class="btn" href="#start">Start free</a>
+      <a class="btn btn-secondary" href="#docs">Read the docs</a>
+    </div>
+  </section>
+
+  <section class="metrics">
+    <div class="metric">
+      <p class="label">Events / second</p>
+      <p class="value">1.2M</p>
+      <p class="delta">▲ 14% vs. last month</p>
+    </div>
+    <div class="metric">
+      <p class="label">Median query</p>
+      <p class="value">340ms</p>
+      <p class="delta">▲ 8% faster</p>
+    </div>
+    <div class="metric">
+      <p class="label">Retention</p>
+      <p class="value">12mo</p>
+      <p class="delta">▲ raw, uncompacted</p>
+    </div>
+    <div class="metric">
+      <p class="label">Ingest lag</p>
+      <p class="value">2.1s</p>
+      <p class="delta down">▼ 0.3s vs. target</p>
+    </div>
+  </section>
+
+  <section id="features">
+    <div class="section-head">
+      <h2>Built for teams that already know what they want to ask</h2>
+      <p>No dashboard builder, no semantic layer to maintain. Point your events at
+         Nimbus and query them the way you query anything else.</p>
+    </div>
+    <div class="cards">
+      <div class="card">
+        <span class="badge">Ingest</span>
+        <h3>Schema-on-read</h3>
+        <p>Send whatever JSON you already have. Columns appear as the data does —
+           no migration, no dropped events when a field changes shape.</p>
+      </div>
+      <div class="card">
+        <span class="badge">Query</span>
+        <h3>Plain Postgres syntax</h3>
+        <p>Anything your team can write against Postgres runs here, including window
+           functions and CTEs, over the full raw event history.</p>
+      </div>
+      <div class="card">
+        <span class="badge highlight">New</span>
+        <h3>Query replay</h3>
+        <p>Re-run any historical query against today's data in one click, and diff the
+           two result sets side by side.</p>
+      </div>
+      <div class="card">
+        <span class="badge">Cost</span>
+        <h3>Priced on ingest, not scans</h3>
+        <p>Query as often as you like. Your bill tracks the events you send, so
+           exploration never shows up as a surprise line item.</p>
+      </div>
+      <div class="card">
+        <span class="badge">Access</span>
+        <h3>Row-level policies</h3>
+        <p>Scope tenants, regions, or teams with policies evaluated at query time —
+           the same rules apply to the API and the console.</p>
+      </div>
+      <div class="card">
+        <span class="badge">Export</span>
+        <h3>Streams back out</h3>
+        <p>Every query can become a materialized stream into S3, Kafka, or a webhook,
+           refreshed on the schedule you set.</p>
+      </div>
+    </div>
+  </section>
+
+  <section id="pricing">
+    <div class="section-head">
+      <h2>Pricing</h2>
+      <p>Every plan includes the full query engine. The tiers differ in volume and
+         retention, not in features.</p>
+    </div>
+    <div class="pricing">
+      <div class="plan">
+        <h3>Starter</h3>
+        <p class="price">$0<span> / month</span></p>
+        <p class="plan-note">For side projects and evaluations.</p>
+        <ul>
+          <li><span class="check">✓</span> 5M events / month</li>
+          <li><span class="check">✓</span> 30-day retention</li>
+          <li><span class="check">✓</span> 1 project, 3 seats</li>
+          <li><span class="check">✓</span> Community support</li>
+        </ul>
+        <a class="btn btn-secondary" href="#start">Start free</a>
+      </div>
+      <div class="plan recommended">
+        <h3>Team</h3>
+        <p class="price">$240<span> / month</span></p>
+        <p class="plan-note">For product teams shipping weekly.</p>
+        <ul>
+          <li><span class="check">✓</span> 250M events / month</li>
+          <li><span class="check">✓</span> 12-month retention</li>
+          <li><span class="check">✓</span> Unlimited projects and seats</li>
+          <li><span class="check">✓</span> Query replay and scheduled exports</li>
+        </ul>
+        <a class="btn" href="#start">Start 14-day trial</a>
+      </div>
+      <div class="plan">
+        <h3>Enterprise</h3>
+        <p class="price">Custom</p>
+        <p class="plan-note">For regulated and high-volume workloads.</p>
+        <ul>
+          <li><span class="check">✓</span> Unmetered ingest</li>
+          <li><span class="check">✓</span> Self-hosted or private cloud</li>
+          <li><span class="check">✓</span> SSO, audit log, row-level policies</li>
+          <li><span class="check">✓</span> 99.95% uptime SLA</li>
+        </ul>
+        <a class="btn btn-secondary" href="#start">Talk to us</a>
+      </div>
+    </div>
+  </section>
+
+  <section id="docs" class="callout">
+    <h2>Ship your first query in five minutes</h2>
+    <p>Install the collector, point it at your endpoint, and the first events land
+       before the docs page finishes loading.</p>
+    <p><code>npm install @nimbus/collector</code></p>
+    <a class="btn" href="#start">Read the quickstart</a>
+  </section>
+
+  <section class="tryit">
+    <h2>Editing this page</h2>
+    <ol>
+      <li>Pick a tool in the toolbar on the left: <strong>Select</strong> (click one element),
+          <strong>Area selection</strong> (drag a box over several), or <strong>Pencil</strong>
+          (lasso freehand around a group).</li>
+      <li>Click a card above, type <em>"add a warning badge saying Beta"</em>, and hit <strong>Apply</strong>.</li>
+      <li>Try <em>"change the background to pink"</em> — pink isn't in this project's
+          <code>DESIGN.md</code>, so the server blocks it and offers <strong>Apply anyway</strong>.</li>
+      <li><kbd>Ctrl</kbd>+<kbd>Z</kbd> undoes without spending a token. <strong>Save</strong> patches
+          <code>demo/index.html</code> on disk, after backing it up to <code>.ai-editor/history/</code>.</li>
+    </ol>
+  </section>
+
+</main>
+
+<footer>
+  <div class="wrap">
+    <span>Nimbus Analytics — a fictional product, used as a demo page for visual-ai-editor.</span>
+    <span>MIT</span>
+  </div>
+</footer>
+
+</body>
+</html>

@@ -1,5 +1,32 @@
 # Changelog
 
+## 1.6.1
+
+### Added
+- **`demo/` — a real, runnable demo.** A self-contained landing page plus a
+  matching `DESIGN.md` whose palette closes exactly over the colors the page
+  uses, so the deterministic off-palette check has something real to reject.
+  `cd demo && npx visual-ai-editor start` boots it; `design:lint` reports zero
+  violations and `design:check` reports 11/11 sections. Shipped in the npm
+  tarball (`files` now includes `demo/`).
+
+### Changed
+- README's Demo section replaced the three "GIF placeholder" blocks with the
+  actual commands, real CLI output, and the three scenarios to walk through.
+- `.gitignore` now covers `.ai-editor/` (save backups and handoff manifests).
+
+### Fixed (documentation)
+- Restored two security notes that describe real behavior and had been dropped
+  from the README: the server **refuses to start** under `NODE_ENV=production`
+  without an `apiToken` (and `allowUnsafeProduction` is the deliberate opt-out),
+  and the client toolbar has **no visibility gate** — shipping `init()` in a
+  production bundle exposes the editor UI to every visitor.
+- Documented `agents:init` and the `AGENTS.md` that postinstall delivers to the
+  consumer's project root; neither was mentioned in the README, despite the
+  install writing to the user's repo.
+- Restored option rows that exist in code and types but had no documentation:
+  `cssUrl` (client), `allowUnsafeProduction`, `silent`, `maxHtmlBytes` (server).
+
 ## 1.6.0
 
 ### Added
