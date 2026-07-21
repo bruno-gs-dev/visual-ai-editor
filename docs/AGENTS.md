@@ -112,14 +112,18 @@ palette check server-side.
   reformatted/prettified source), and only writes the full snapshot if a
   patch's `before` text can't be located at all. A timestamped backup goes to
   `.ai-editor/history/` before every write.
+  - **Note for Angular without the plugin**: Angular has no built-in source
+    metadata (no fiber, no `__file`), so every Angular project falls here by
+    default. Install `@ai-editor/angular-plugin` to fix it (see below).
 - **Framework source detected** (React `_debugSource` fiber data, Vue 3
-  `__file` component metadata, or an explicit `data-ai-source="file:line"`
+  `__file` component metadata, Angular via `@ai-editor/angular-plugin`'s
+  `data-ai-source` injection, or an explicit `data-ai-source="file:line"`
   attribute) on any recorded edit → posts to `/api/handoff` instead, appending
   a change manifest to `.ai-editor/pending-changes.md`. **If asked to "apply
-  the visual edits" on a React/Vue project, read that file** — it lists each
-  edit's detected source location, instruction, and before/after HTML; apply
-  each to the real JSX/template source, adapting the markup to the framework,
-  then delete the entry.
+  the visual edits" on a React/Vue/Angular project, read that file** — it lists
+  each edit's detected source location, instruction, and before/after HTML;
+  apply each to the real JSX/template source, adapting the markup to the
+  framework, then delete the entry.
 
 ### Troubleshooting
 
@@ -155,6 +159,12 @@ palette check server-side.
   drops any listeners attached directly to the replaced element. Pass
   `onAfterApply` to `init()` to re-bind them — see `README.md`'s "Event
   listeners on edited elements" section.
+- **Angular app with no save target**: if Save produces a full-page HTML
+  snapshot instead of targeted patches, the editor detected no framework
+  source. Angular does not emit source metadata natively. Install
+  `@ai-editor/angular-plugin` and configure it in `angular.json` to
+  auto-inject `data-ai-source` attributes during `ng serve` — see
+  README.md's Angular section.
 
 ### This is a dev/staging tool by default
 
