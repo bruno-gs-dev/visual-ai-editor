@@ -1,5 +1,35 @@
 # Changelog
 
+## 2.1.0 (2026-07-21)
+
+### Added
+- **`--skip-validation` flag** para `config` — pula o health check da API key
+  (útil para providers locais ou quando a latência do check atrapalha).
+- **`prepublishOnly`** roda `build` + `test` automaticamente antes de todo
+  `npm publish`, evitando publicar artefatos desatualizados (`dist/`, `dist-node/`
+  são gitignored).
+
+### Fixed
+- **Validação de API key por-provider.** O health check pós-config agora passa
+  pelo mesmo registry de adapters do server, então Anthropic usa
+  `x-api-key` + `/v1/messages` (antes usava `Authorization: Bearer` + corpo
+  OpenAI, gerando falso "key inválida" para keys válidas da Anthropic).
+- **`config --auto` não bloqueia mais.** A criação do `DESIGN.prompt.md` era
+  interativa mesmo em modo automático, travando CI/scripts à espera de stdin;
+  agora é criada silenciosamente.
+- **Modo por-flag (`--provider`) consistente com o interativo.** Além de salvar,
+  agora valida a key e cria `DESIGN.prompt.md` + `AGENTS.md` silenciosamente
+  (antes apenas imprimia dicas).
+- **`agents:init` / criação de `AGENTS.md` no pacote publicado.** O template era
+  procurado em `dist-node/docs/AGENTS.md` (profundidade errada); agora resolve
+  tanto rodando do source quanto do build compilado.
+
+### Docs
+- README documenta o comando `config` e a lista completa de providers
+  (OpenAI · Anthropic · Gemini · Groq · OpenCode · Ollama · LM Studio).
+- Novo `docs/RELEASE-WORKFLOW.md` + `scripts/release.sh` para releases
+  padronizados.
+
 ## 1.6.2
 
 ### Fixed (documentation)

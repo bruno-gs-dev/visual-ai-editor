@@ -25,8 +25,17 @@ var START_MARKER = '<!-- visual-ai-editor:start -->';
 var END_MARKER = '<!-- visual-ai-editor:end -->';
 
 function ourBlock(){
-  var templatePath = path.join(__dirname, '..', 'docs', 'AGENTS.md');
-  return fs.readFileSync(templatePath, 'utf8').trim();
+  // docs/ ships at the package root and is NOT compiled into dist-node, so the
+  // relative depth differs between running from source (lib/) and from the
+  // built package (dist-node/lib/). Try both.
+  var candidates = [
+    path.join(__dirname, '..', 'docs', 'AGENTS.md'),
+    path.join(__dirname, '..', '..', 'docs', 'AGENTS.md')
+  ];
+  for (var i = 0; i < candidates.length; i++){
+    if (fs.existsSync(candidates[i])) return fs.readFileSync(candidates[i], 'utf8').trim();
+  }
+  throw new Error('AGENTS.md template not found (looked in: ' + candidates.join(', ') + ')');
 }
 
 function installAgentsMd(projectRoot){

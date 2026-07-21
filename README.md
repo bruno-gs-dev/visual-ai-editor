@@ -108,7 +108,7 @@ Instead of rewriting an entire page, you simply select an existing HTML element 
 - Review generated changes before applying
 - Iterate faster on existing projects
 
-**Supported providers:** OpenAI · Claude · Gemini · Groq
+**Supported providers:** OpenAI · Anthropic · Gemini · Groq · OpenCode · Ollama · LM Studio
 
 ---
 
@@ -143,6 +143,7 @@ The server boots, the browser opens, and the editor toolbar is **auto-injected**
 | Command | Description |
 |---------|-------------|
 | `start` (default) | Boot the editor in the current directory |
+| `config` | Configure your AI provider — interactive or via flags (`--provider`, `--show`) |
 | `design:init` | Write `DESIGN.prompt.md` — a guided prompt for creating your `DESIGN.md` |
 | `design:check` | Report which of the 11 recommended `DESIGN.md` sections exist |
 | `design:lint` | Find off-palette colors across the project's CSS/HTML/JS |
@@ -260,7 +261,7 @@ export class AppComponent implements OnInit, OnDestroy {
 }
 ```
 
-That's it — no proxy needed, no extra config. The editor server (v1.7.0+)
+That's it — no proxy needed, no extra config. The editor server
 accepts cross-origin requests from `localhost:*` automatically, so calling
 `init({ apiBase: 'http://localhost:3000' })` from `ng serve` (`:4200`) just
 works. Use environment guards to keep the editor out of production builds.

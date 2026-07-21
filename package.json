@@ -1,6 +1,6 @@
 {
   "name": "visual-ai-editor",
-  "version": "2.0.2",
+  "version": "2.1.0",
   "description": "AI-powered visual HTML editor with selection tools, design-system enforcement, and surgical source patching. Works with any OpenAI-compatible LLM provider, including local ones like Ollama.",
   "main": "dist/ai-editor.js",
   "module": "dist/ai-editor.esm.js",
@@ -58,6 +58,7 @@
     "build:browser": "tsx scripts/build.ts",
     "build": "tsc && tsx scripts/build.ts",
     "dev": "tsx scripts/build.ts --watch",
+    "prepublishOnly": "npm run build && npm test",
     "postinstall": "node dist-node/scripts/postinstall.js",
     "test": "node --test test/*.test.js"
   },

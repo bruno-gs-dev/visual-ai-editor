@@ -18,6 +18,7 @@ var designTokens = require('../lib/design-tokens.js');
 var configLib = require('../lib/config.js');
 var ui = require('../lib/cli-ui.js');
 var prompts = require('prompts');
+var providerRegistry = require('../server/providers/index.js');
 
 var LINT_EXTENSIONS = ['.css', '.html', '.htm', '.js', '.jsx', '.ts', '.tsx', '.vue', '.svelte'];
 var LINT_IGNORE_DIRS = ['node_modules', '.git', 'dist', 'build', '.next', '.cache', 'coverage', '.ai-editor'];
@@ -128,7 +129,7 @@ function cmdDesignInit(){
     return;
   }
 
-  var templatePath = path.join(__dirname, '..', 'templates', 'design-md-prompt.md');
+  var templatePath = path.join(__dirname, '..', '..', 'templates', 'design-md-prompt.md');
   var dir = path.join(root, '.ai-editor');
   fs.mkdirSync(dir, { recursive: true });
   var outPath = path.join(dir, 'DESIGN.prompt.md');
@@ -175,11 +176,72 @@ function parseFlag(argv, flag){
   return argv[idx + 1];
 }
 
+/**
+ * Quick provider health check. Builds the request through the same adapter
+ * registry the server uses, so the auth header + body shape are correct per
+ * provider (Anthropic uses x-api-key + /v1/messages, not Bearer + OpenAI body).
+ * Returns { status: 'ok' | 'invalid' | 'unknown' | 'error', code? }.
+ */
+async function validateApiKey(data){
+  var adapter = providerRegistry.resolve(data.endpoint);
+  var req = adapter.buildRequest(
+    { endpoint: data.endpoint, model: data.model, apiKey: data.apiKey, maxTokens: 1, temperature: 0 },
+    { system: 'ping', user: 'hi' },
+    false
+  );
+  try {
+    var resp = await fetch(req.url, {
+      method: 'POST',
+      headers: req.headers,
+      body: JSON.stringify(req.body),
+      signal: AbortSignal.timeout(8000)
+    });
+    if (resp.ok) return { status: 'ok' };
+    if (resp.status === 401 || resp.status === 403) return { status: 'invalid', code: resp.status };
+    // Any other status (400/404/429/5xx) is inconclusive — don't cry wolf.
+    return { status: 'unknown', code: resp.status };
+  } catch (e) {
+    return { status: 'error' };
+  }
+}
+
+/** Copy the DESIGN.prompt.md template into .ai-editor/ without overwriting. */
+function createDesignPrompt(root){
+  var tplPath = path.join(__dirname, '..', '..', 'templates', 'design-md-prompt.md');
+  var aiDir = path.join(root, '.ai-editor');
+  fs.mkdirSync(aiDir, { recursive: true });
+  var outPath = path.join(aiDir, 'DESIGN.prompt.md');
+  if (fs.existsSync(outPath)) return { action: 'exists', path: outPath };
+  fs.copyFileSync(tplPath, outPath);
+  return { action: 'created', path: outPath };
+}
+
+/**
+ * Ensure DESIGN.prompt.md + AGENTS.md exist. In non-interactive mode
+ * (flag/--auto) both are created silently; nothing here ever prompts.
+ * Returns the resolved paths so callers can print a checklist.
+ */
+function ensureProjectSetupSilently(root){
+  var designMdPath = designCheck.findDesignMd(root);
+  var agentsPath = path.join(root, '.ai-editor', 'AGENTS.md');
+
+  if (!designMdPath){
+    var dp = createDesignPrompt(root);
+    if (dp.action === 'created') ui.success('Criado: .ai-editor/DESIGN.prompt.md — cole no seu agente de IA para gerar o DESIGN.md.');
+  }
+  if (!fs.existsSync(agentsPath)){
+    var installAgentsMd = require('../lib/agents-md.js').installAgentsMd;
+    var r = installAgentsMd(root);
+    if (r.action === 'created') ui.success('Criado: ' + r.path);
+  }
+}
+
 function cmdConfig(argv){
   var root = resolveProjectRoot();
   var isGlobal = argv.indexOf('--global') !== -1;
   var isShow = argv.indexOf('--show') !== -1;
   var isAuto = argv.indexOf('--auto') !== -1;
+  var isSkipValidation = argv.indexOf('--skip-validation') !== -1;
   var scope = isGlobal ? 'global' : 'local';
 
   // --show: display current config with branded output
@@ -219,6 +281,25 @@ function cmdConfig(argv){
       ui.kvLine('Endpoint', fileConfig.endpoint || ui.dim('(nenhum)'));
       ui.kvLine('Model', fileConfig.model || ui.dim('(nenhum)'));
     }
+
+    // Design system status
+    ui.gap();
+    ui.divider();
+    var designMdPath = designCheck.findDesignMd(root);
+    if (designMdPath){
+      var designContent = fs.readFileSync(designMdPath, 'utf8');
+      var sections = designCheck.checkSections(designContent);
+      var covered = sections.filter(function(s){ return s.found; }).length;
+      ui.kvLine('DESIGN.md', ui.chalk.green('✓') + ' ' + designMdPath + ' (' + covered + '/11 seções)');
+    } else {
+      ui.kvLine('DESIGN.md', ui.chalk.red('✗') + ' não encontrado');
+      ui.info('  Rode: npx visual-ai-editor design:init');
+    }
+    var agentsPath = path.join(root, '.ai-editor', 'AGENTS.md');
+    var hasAgents = fs.existsSync(agentsPath);
+    ui.kvLine('AGENTS.md', hasAgents ? ui.chalk.green('✓') + ' ' + agentsPath : ui.chalk.red('✗') + ' não encontrado');
+    if (!hasAgents) ui.info('  Rode: npx visual-ai-editor agents:init');
+    ui.divider();
     return;
   }
 
@@ -229,7 +310,6 @@ function cmdConfig(argv){
   var flagEndpoint = parseFlag(argv, '--endpoint');
 
   if (flagProvider || flagEndpoint){
-    ui.banner();
     var preset = configLib.PROVIDER_PRESETS.find(function(p){ return p.id === flagProvider; });
     var data = {
       provider: flagProvider || 'custom',
@@ -237,17 +317,40 @@ function cmdConfig(argv){
       model: flagModel || (preset ? preset.defaultModel : ''),
       apiKey: flagKey || ''
     };
-    var spin = ui.spinner('Salvando configuração...');
-    var saved = configLib.saveConfig(root, scope, data);
-    spin.succeed('Config salva em ' + saved);
-    ui.gap();
-    ui.kvLine('Provider', data.provider);
-    ui.kvLine('Endpoint', data.endpoint);
-    ui.kvLine('Model', data.model);
-    if (data.apiKey) ui.kvLine('API Key', data.apiKey.slice(0, 8) + '...');
-    ui.gap();
-    ui.success('Próximo passo: ' + ui.chalk.cyan('npx visual-ai-editor start'));
-    return;
+
+    return (async function(){
+      ui.banner();
+      var spin = ui.spinner('Salvando configuração...');
+      var saved = configLib.saveConfig(root, scope, data);
+      spin.succeed('Config salva em ' + saved);
+      ui.gap();
+      ui.kvLine('Provider', data.provider);
+      ui.kvLine('Endpoint', data.endpoint);
+      ui.kvLine('Model', data.model);
+      if (data.apiKey) ui.kvLine('API Key', data.apiKey.slice(0, 8) + '...');
+
+      // Validate the key (per-provider), unless skipped or there's nothing to check.
+      if (data.apiKey && data.endpoint && !isSkipValidation){
+        ui.gap();
+        var valSpin = ui.spinner('Validando API key...');
+        var result = await validateApiKey(data);
+        if (result.status === 'ok') valSpin.succeed('API key válida');
+        else if (result.status === 'invalid'){
+          valSpin.fail('API key inválida ou sem acesso (' + result.code + ')');
+          ui.info('Verifique com: ' + ui.chalk.cyan('npx visual-ai-editor config --show'));
+        } else valSpin.stop();
+      }
+
+      // Create DESIGN.prompt.md + AGENTS.md silently (direct mode never prompts).
+      ui.gap();
+      ensureProjectSetupSilently(root);
+
+      ui.gap();
+      ui.success('Próximo passo: ' + ui.chalk.cyan('npx visual-ai-editor start'));
+    })().catch(function(e){
+      ui.error('Erro: ' + e.message);
+      process.exitCode = 1;
+    });
   }
 
   // Interactive mode — full branded experience
@@ -384,12 +487,83 @@ function cmdConfig(argv){
     ui.divider();
     ui.gap();
 
-    // 6. Ask to start (skip in --auto mode)
+    // 6. Validate API key (quick, per-provider health check)
+    if (preset.needsKey && data.apiKey && !isSkipValidation){
+      var valSpin = ui.spinner('Validando API key...');
+      var valResult = await validateApiKey(data);
+      if (valResult.status === 'ok'){
+        valSpin.succeed('API key válida');
+      } else if (valResult.status === 'invalid'){
+        valSpin.fail('API key inválida ou sem acesso (' + valResult.code + ')');
+        ui.info('Verifique a key em: ' + ui.chalk.cyan('npx visual-ai-editor config --show'));
+      } else {
+        valSpin.stop();
+      }
+      ui.gap();
+    }
+
+    // 7. Check DESIGN.md + AGENTS.md
+    var designMdPath = designCheck.findDesignMd(root);
+    var agentsPath = path.join(root, '.ai-editor', 'AGENTS.md');
+    var hasAgents = fs.existsSync(agentsPath);
+    var needsSetup = !designMdPath || !hasAgents;
+
+    if (needsSetup){
+      ui.divider();
+      ui.info('Projeto — checklist de setup:');
+      if (designMdPath){
+        var designContent = fs.readFileSync(designMdPath, 'utf8');
+        var sections = designCheck.checkSections(designContent);
+        var covered = sections.filter(function(s){ return s.found; }).length;
+        ui.kvLine('DESIGN.md', ui.chalk.green('✓') + ' ' + covered + '/11 seções');
+      } else {
+        ui.kvLine('DESIGN.md', ui.chalk.red('✗') + ' não encontrado');
+      }
+      ui.kvLine('AGENTS.md', hasAgents ? ui.chalk.green('✓') : ui.chalk.red('✗') + ' não encontrado');
+      ui.divider();
+      ui.gap();
+
+      if (!designMdPath){
+        // In --auto mode never prompt — create it silently so automation
+        // (CI, scripted setup) doesn't block waiting for stdin.
+        var wantDesign = isAuto;
+        if (!isAuto){
+          var createDesign = await prompts({
+            type: 'confirm',
+            name: 'value',
+            message: 'Criar DESIGN.prompt.md (guiado para gerar o DESIGN.md com IA)?',
+            initial: true
+          });
+          wantDesign = createDesign.value;
+        }
+        if (wantDesign){
+          var dp = createDesignPrompt(root);
+          if (dp.action === 'created'){
+            ui.success('Criado: .ai-editor/DESIGN.prompt.md');
+            ui.info('Cole no seu agente de IA para gerar o DESIGN.md.');
+          } else {
+            ui.info('.ai-editor/DESIGN.prompt.md já existe — nada foi sobrescrito.');
+          }
+          ui.gap();
+        }
+      }
+
+      if (!hasAgents){
+        var installAgentsMd = require('../lib/agents-md.js').installAgentsMd;
+        var agentsResult = installAgentsMd(root);
+        if (agentsResult.action === 'created'){
+          ui.success('Criado: ' + agentsResult.path);
+        }
+      }
+    }
+
+    // 8. Ask to start (skip in --auto mode)
     if (isAuto){
       ui.gap();
       ui.success('Configuração concluída!');
       ui.gap();
     } else {
+      ui.gap();
       var startResult = await prompts({
         type: 'confirm',
         name: 'value',
@@ -401,7 +575,13 @@ function cmdConfig(argv){
       if (startResult.value){
         cmdStart([]);
       } else {
-        ui.success('Próximo passo: ' + ui.chalk.cyan('npx visual-ai-editor start'));
+        ui.gap();
+        ui.divider();
+        ui.info('Próximos passos:');
+        if (!designMdPath) ui.info('  1. Cole DESIGN.prompt.md no agente de IA → gere o DESIGN.md');
+        if (!hasAgents) ui.info('  ' + (designMdPath ? '1' : '2') + '. npx visual-ai-editor agents:init');
+        ui.success('  ' + (needsSetup ? '3' : '1') + '. npx visual-ai-editor start');
+        ui.divider();
         ui.gap();
       }
     }
