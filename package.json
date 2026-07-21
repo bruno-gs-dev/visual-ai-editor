@@ -1,6 +1,6 @@
 {
   "name": "visual-ai-editor",
-  "version": "1.7.0",
+  "version": "1.7.1",
   "description": "AI-powered visual HTML editor with selection tools, design-system enforcement, and surgical source patching. Works with any OpenAI-compatible LLM provider, including local ones like Ollama.",
   "main": "dist/ai-editor.js",
   "module": "dist/ai-editor.esm.js",
