@@ -44,16 +44,19 @@ test('ensureEnvFile creates .env from the template and never overwrites', async 
 
 test('ensureGitignore creates, appends, and leaves covered files alone', async function(){
   await withTempDir(async function(dir){
+    // no default entries → creates empty .gitignore
     assert.equal(envInit.ensureGitignore(dir).action, 'created');
-    assert.equal(fs.readFileSync(path.join(dir, '.gitignore'), 'utf8'), '.env\n');
+    assert.equal(fs.readFileSync(path.join(dir, '.gitignore'), 'utf8'), '\n');
     assert.equal(envInit.ensureGitignore(dir).action, 'unchanged');
 
+    // with explicit entries
     fs.writeFileSync(path.join(dir, '.gitignore'), 'node_modules');
-    assert.equal(envInit.ensureGitignore(dir).action, 'appended');
-    assert.equal(fs.readFileSync(path.join(dir, '.gitignore'), 'utf8'), 'node_modules\n.env\n');
+    assert.equal(envInit.ensureGitignore(dir, ['node_modules', '.ai-editor/']).action, 'appended');
+    assert.match(fs.readFileSync(path.join(dir, '.gitignore'), 'utf8'), /\.ai-editor/);
 
-    fs.writeFileSync(path.join(dir, '.gitignore'), 'node_modules\n.env*\n');
-    assert.equal(envInit.ensureGitignore(dir).action, 'unchanged');
+    // already covered
+    fs.writeFileSync(path.join(dir, '.gitignore'), 'node_modules\n.ai-editor/\n');
+    assert.equal(envInit.ensureGitignore(dir, ['node_modules', '.ai-editor/']).action, 'unchanged');
   });
 });
 

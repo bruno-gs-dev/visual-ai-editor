@@ -434,9 +434,9 @@ function cmdStart(argv){
   var noInject = argv.indexOf('--no-inject') !== -1;
   var noOpen = argv.indexOf('--no-open') !== -1;
 
-  var gi = envInit.ensureGitignore(root);
+  var gi = envInit.ensureGitignore(root, ['.ai-editor/']);
   if (gi.action !== 'unchanged'){
-    console.log('[visual-ai-editor] .gitignore ' + (gi.action === 'created' ? 'criado' : 'atualizado') + ' — .env nunca deve ir para o git.');
+    console.log('[visual-ai-editor] .gitignore ' + (gi.action === 'created' ? 'criado' : 'atualizado') + ' — .ai-editor/ nunca deve ir para o git.');
   }
 
   // Load .env if it exists (backward compat), but don't auto-create it

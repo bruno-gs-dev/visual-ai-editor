@@ -68,7 +68,7 @@ cd visual-ai-editor/demo
 npx visual-ai-editor start
 ```
 
-First run writes a `.env` — paste an API key into `AI_API_KEY=` and run it again.
+First run opens the editor — configure your AI provider in **Settings**.
 (Already installed the package? The demo ships in the tarball too:
 `cd node_modules/visual-ai-editor/demo`.)
 
@@ -312,17 +312,10 @@ onUnmounted(() => AIEditor.destroy());
 
 ## AI Providers
 
-Any OpenAI-compatible chat-completions API works. Configure it three ways, in order of
-precedence: the `ai` option to `startServer()`, then environment variables, then the
-built-in default (Groq, `llama-3.3-70b-versatile`).
+Any OpenAI-compatible chat-completions API works. Configure it two ways, in order of
+precedence: the `ai` option to `startServer()`, then the built-in default (Groq, `llama-3.3-70b-versatile`).
 
-**Via `.env`** — no code changes:
-
-```
-AI_ENDPOINT=https://api.openai.com/v1/chat/completions
-AI_MODEL=gpt-4o-mini
-AI_API_KEY=sk-...
-```
+**Via Settings UI** — open Settings in the editor and pick your provider. Saved to `.ai-editor/config.json`.
 
 **Via code:**
 

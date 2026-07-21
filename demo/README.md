@@ -8,9 +8,7 @@ cd demo
 npx visual-ai-editor start
 ```
 
-First run writes a `.env` — paste a key into `AI_API_KEY=` and run it again. Any
-OpenAI-compatible provider works, including Ollama and LM Studio on localhost (no key
-needed; uncomment the matching `AI_ENDPOINT` in `.env`).
+First run opens the editor — configure your AI provider in **Settings**.
 
 Working from a clone of this repo instead of the published package:
 
