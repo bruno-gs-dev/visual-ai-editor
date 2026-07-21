@@ -129,7 +129,9 @@ function cmdDesignInit(){
   }
 
   var templatePath = path.join(__dirname, '..', 'templates', 'design-md-prompt.md');
-  var outPath = path.join(root, 'DESIGN.prompt.md');
+  var dir = path.join(root, '.ai-editor');
+  fs.mkdirSync(dir, { recursive: true });
+  var outPath = path.join(dir, 'DESIGN.prompt.md');
 
   if (fs.existsSync(outPath)){
     console.log('[visual-ai-editor] ' + outPath + ' já existe — nada foi sobrescrito.');

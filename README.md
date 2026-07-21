@@ -1,17 +1,35 @@
 <div align="center">
 
-# visual-ai-editor
+# Visual AI Editor
 
-**AI-powered visual HTML editor.**
+**Edit existing HTML with AI using natural language.**
 
-Select any element on the page, describe what you want to change in natural language, and the AI rewrites it — following your design system.
+Select any element, describe the change, and let AI update your code while respecting your Design System.
 
 [![npm version](https://img.shields.io/npm/v/visual-ai-editor?color=4f46e5&label=version)](https://www.npmjs.com/package/visual-ai-editor)
 [![license](https://img.shields.io/npm/l/visual-ai-editor)](LICENSE)
 
-[Demo](#demo) · [Install](#install) · [Quick Start](#quick-start) · [Providers](#ai-providers) · [Frameworks](#usage-by-framework) · [Design System](#design-system) · [Saving](#saving-edits) · [API](#api-reference) · [Security](#security)
+[Demo](#demo) · [Install](#installation) · [Quick Start](#quick-start) · [Providers](#ai-providers) · [Frameworks](#usage-by-framework) · [Design System](#design-system) · [API](#api-reference) · [Security](#security)
 
 </div>
+
+---
+
+## Installation
+
+```bash
+npm install visual-ai-editor
+```
+
+Or your preferred package manager:
+
+```bash
+pnpm add visual-ai-editor
+# or
+yarn add visual-ai-editor
+```
+
+That's it — `express`, `dotenv`, and markdown rendering are bundled. Nothing else to install.
 
 ---
 
@@ -23,11 +41,11 @@ because a browser recording can't capture the OS pointer.
 
 ### Edit an element
 
-Pick **Select**, click a feature card, type `add a warning badge saying Beta`, press **Apply**.
+Pick **Select**, click the hero heading, type `make the heading color indigo`, press **Apply**.
 
-![Selecting a card and adding a Beta badge with a natural-language instruction](https://raw.githubusercontent.com/bruno-gs-dev/visual-ai-editor/main/docs/gifs/basic-edit.gif)
+![Selecting the heading and changing its color to indigo with a natural-language instruction](https://raw.githubusercontent.com/bruno-gs-dev/visual-ai-editor/main/docs/gifs/basic-edit.gif)
 
-The card re-renders in place using the `.badge.highlight` class from the demo's design
+The heading re-renders in indigo using the `--primary` token from the demo's design
 system — the AI reused it because [`DESIGN.md`](demo/DESIGN.md) was in its system prompt,
 not because the instruction mentioned it. Hit **Save** and the change lands in
 `demo/index.html` as a small diff, with the original copied to `.ai-editor/history/` first.
@@ -66,58 +84,31 @@ over the four metric tiles, and **Pencil** lassoes freehand around a group. With
 elements selected, `make these use the secondary button style` rewrites all of them in one
 request. `Ctrl+Z` undoes any of it instantly and without an API call.
 
-The demo folder also gives the design commands something real to report on:
-
-```
-$ npx visual-ai-editor design:lint
-[visual-ai-editor] Paleta detectada (17 cores): #6366f1, #0b0f19, #131a2a, ...
-[visual-ai-editor] Verificando 1 arquivo(s)...
-
-Nenhuma cor fora da paleta encontrada. ✓
-
-$ npx visual-ai-editor design:check
-[visual-ai-editor] DESIGN.md encontrado em: .../demo/DESIGN.md
-
-  ✓ Visão Geral          ✓ Layout e Grid
-  ✓ Princípios de Design ✓ Componentes
-  ✓ Paleta de Cores      ✓ Acessibilidade
-  ✓ Tipografia           ✓ Regras Específicas para IA
-  ✓ Espaçamentos         ✓ Exemplos de Prompts
-  ✓ Bordas, Raios e Sombras
-
-Cobertura completa — todas as 11 seções recomendadas foram encontradas.
-```
-
-(Two columns here for space — the CLI prints one section per line.)
-
 > CLI output is currently Portuguese-only; the in-browser UI follows `<html lang>`
 > (`en` / `pt-BR`). The demo page is `lang="en"`, so its toolbar is in English.
 
 ---
 
-## Features
+## Why Visual AI Editor?
 
-| Feature | Description |
-|---------|-------------|
-| 🎯 **Visual selection** | Click, drag-to-select area, or draw a freehand lasso around elements |
-| 🤖 **AI-powered edits** | Describe changes in natural language — any OpenAI-compatible provider works |
-| 🎨 **Design system enforcement** | AI follows your `DESIGN.md` — deterministic palette check catches what the model misses |
-| 💾 **Surgical saves** | Patches your source file in-place with 1-line diffs; auto-backup before every save |
-| 🤝 **AI-agent handoff** | React/Vue pages export a change manifest instead of overwriting rendered output |
-| ⌨️ **Undo / Redo** | `Ctrl+Z` / `Ctrl+Y` — zero tokens, instant |
-| 🌐 **Framework-agnostic** | Works with static HTML, React, Angular, Vue, or any framework |
-| 🌍 **EN / pt-BR UI** | Auto-detected from `<html lang>`, or set explicitly |
-| 📋 **DESIGN.md viewer** | View your design system reference in a modal inside the editor |
+Most AI coding tools generate code from scratch.
+
+Visual AI Editor takes a different approach.
+
+Instead of rewriting an entire page, you simply select an existing HTML element and describe the change you want. The editor sends only the necessary context to the AI, validates the generated output, and applies the modification while preserving your project's structure and Design System.
 
 ---
 
-## Install
+## What You Can Do
 
-```bash
-npm install visual-ai-editor
-```
+- Edit existing HTML visually
+- Modify interfaces using natural language
+- Follow your Design System automatically
+- Choose your preferred AI provider
+- Review generated changes before applying
+- Iterate faster on existing projects
 
-That's it — `express`, `dotenv`, and markdown rendering are bundled. Nothing else to install.
+**Supported providers:** OpenAI · Claude · Gemini · Groq
 
 ---
 
@@ -176,71 +167,36 @@ The server boots, the browser opens, and the editor toolbar is **auto-injected**
 | `design:lint` | Find off-palette colors across the project's CSS/HTML/JS |
 | `agents:init` | Install or update `AGENTS.md` (normally done automatically on install) |
 
-### AGENTS.md, delivered on install
+---
 
-On `npm install`, the package writes an `AGENTS.md` to your project root — a guide that
-explains this tool to any AI coding agent (Claude Code, Cursor, …): the API contract, how
-`DESIGN.md` enforcement works, force mode, and troubleshooting. If you already have an
-`AGENTS.md`, only our own block is appended (and updated in place on later upgrades) —
-**your existing content is never touched.** If your npm setup blocks install scripts, run
-`npx visual-ai-editor agents:init` to get the same result.
+## Your First Edit
+
+1. Select any HTML element.
+2. Describe the change in natural language.
+3. Review the generated result.
+4. Apply the modification.
+
+Example:
+
+> "Increase the button padding and use the primary color."
+
+The editor updates only the selected element while keeping the surrounding code untouched.
 
 ---
 
-## AI Providers
+## Features
 
-Any OpenAI-compatible chat-completions API works. Configure it three ways, in order of
-precedence: the `ai` option to `startServer()`, then environment variables, then the
-built-in default (Groq, `llama-3.3-70b-versatile`).
-
-**Via `.env`** — no code changes:
-
-```
-AI_ENDPOINT=https://api.openai.com/v1/chat/completions
-AI_MODEL=gpt-4o-mini
-AI_API_KEY=sk-...
-```
-
-**Via code:**
-
-```js
-startServer({
-  ai: {
-    endpoint: 'https://api.openai.com/v1/chat/completions',
-    model: 'gpt-4o-mini',
-    apiKey: process.env.OPENAI_API_KEY
-  }
-});
-```
-
-### Local models (Ollama, LM Studio)
-
-Local providers have a shorthand, so you don't type the endpoint URL:
-
-```js
-startServer({ ai: { provider: 'ollama', model: 'llama3.2' } });   // pull it first
-startServer({ ai: { provider: 'lmstudio', model: 'your-loaded-model' } });
-```
-
-`'ollama'` resolves to `http://localhost:11434/v1/chat/completions`, `'lmstudio'` to
-`http://localhost:1234/v1/chat/completions`. An explicit `endpoint` always wins over the
-preset. No API key is required — there's nothing to authenticate against on localhost, and
-the server auto-detects this from the endpoint's host for any `localhost`/`127.0.0.1` URL,
-preset or not. Override it either direction with `requiresApiKey: true | false`.
-
-**A note on model capability.** The plumbing (no-auth requests, error propagation,
-structured-JSON parsing) works regardless of model size. Response *quality* doesn't. A
-capable model — Groq's 70B, GPT-4o-mini, or a comparable local model your hardware can
-run — reliably follows the full instruction set (`DESIGN.md` compliance, force mode, the
-`{html}`/`{warn}` JSON contract). A 3B local model, in testing, sometimes returned
-truncated or malformed JSON once a project's `DESIGN.md` was in the system prompt. That's
-a model limit, not a bug to route around: if edits come back empty or malformed on a local
-model, try a larger one before assuming something is broken.
-
-### Legacy environment variables
-
-`GROQ_API_KEY` and `GROQ_MODEL` are still honored as a fallback, so setups from earlier
-versions keep working — there's no need to rename anything.
+| Feature | Description |
+|---------|-------------|
+| **Visual selection** | Click, drag-to-select area, or draw a freehand lasso around elements |
+| **AI-powered edits** | Describe changes in natural language — any OpenAI-compatible provider works |
+| **Design system enforcement** | AI follows your `DESIGN.md` — deterministic palette check catches what the model misses |
+| **Surgical saves** | Patches your source file in-place with 1-line diffs; auto-backup before every save |
+| **AI-agent handoff** | React/Vue pages export a change manifest instead of overwriting rendered output |
+| **Undo / Redo** | `Ctrl+Z` / `Ctrl+Y` — zero tokens, instant |
+| **Framework-agnostic** | Works with static HTML, React, Angular, Vue, or any framework |
+| **EN / pt-BR UI** | Auto-detected from `<html lang>`, or set explicitly |
+| **DESIGN.md viewer** | View your design system reference in a modal inside the editor |
 
 ---
 
@@ -344,6 +300,54 @@ onUnmounted(() => AIEditor.destroy());
 
 ---
 
+## AI Providers
+
+Any OpenAI-compatible chat-completions API works. Configure it three ways, in order of
+precedence: the `ai` option to `startServer()`, then environment variables, then the
+built-in default (Groq, `llama-3.3-70b-versatile`).
+
+**Via `.env`** — no code changes:
+
+```
+AI_ENDPOINT=https://api.openai.com/v1/chat/completions
+AI_MODEL=gpt-4o-mini
+AI_API_KEY=sk-...
+```
+
+**Via code:**
+
+```js
+startServer({
+  ai: {
+    endpoint: 'https://api.openai.com/v1/chat/completions',
+    model: 'gpt-4o-mini',
+    apiKey: process.env.OPENAI_API_KEY
+  }
+});
+```
+
+### Local models (Ollama, LM Studio)
+
+Local providers have a shorthand, so you don't type the endpoint URL:
+
+```js
+startServer({ ai: { provider: 'ollama', model: 'llama3.2' } });   // pull it first
+startServer({ ai: { provider: 'lmstudio', model: 'your-loaded-model' } });
+```
+
+`'ollama'` resolves to `http://localhost:11434/v1/chat/completions`, `'lmstudio'` to
+`http://localhost:1234/v1/chat/completions`. An explicit `endpoint` always wins over the
+preset. No API key is required — there's nothing to authenticate against on localhost, and
+the server auto-detects this from the endpoint's host for any `localhost`/`127.0.0.1` URL,
+preset or not. Override it either direction with `requiresApiKey: true | false`.
+
+### Legacy environment variables
+
+`GROQ_API_KEY` and `GROQ_MODEL` are still honored as a fallback, so setups from earlier
+versions keep working — there's no need to rename anything.
+
+---
+
 ## Design System
 
 `DESIGN.md` keeps the AI on-brand. It documents your colors, typography, spacing, components, and rules — and the AI is instructed to follow it on every edit.
@@ -439,6 +443,33 @@ init({
 ```
 
 `onAfterUndo` is the same hook for the undo path.
+
+---
+
+## Advanced Notes
+
+<details>
+<summary><strong>Small local models</strong></summary>
+
+Smaller local models (for example 3B models) may struggle with complex UI modifications due to limited context and reasoning capabilities.
+
+The plumbing (no-auth requests, error propagation, structured-JSON parsing) works regardless of model size. Response *quality* doesn't. A capable model — Groq's 70B, GPT-4o-mini, or a comparable local model your hardware can run — reliably follows the full instruction set (`DESIGN.md` compliance, force mode, the `{html}`/`{warn}` JSON contract).
+
+For the best experience, use models capable of handling larger contexts.
+
+</details>
+
+<details>
+<summary><strong>AGENTS.md, delivered on install</strong></summary>
+
+On `npm install`, the package writes an `AGENTS.md` to `.ai-editor/` — a guide that
+explains this tool to any AI coding agent (Claude Code, Cursor, …): the API contract, how
+`DESIGN.md` enforcement works, force mode, and troubleshooting. If you already have an
+`AGENTS.md`, only our own block is appended (and updated in place on later upgrades) —
+**your existing content is never touched.** If your npm setup blocks install scripts, run
+`npx visual-ai-editor agents:init` to get the same result.
+
+</details>
 
 ---
 
@@ -560,6 +591,22 @@ correctly rejects their requests. Gate `init()` yourself: an environment check
 
 ---
 
+## Contributing
+
+Contributions are welcome.
+
+If you have suggestions, bug reports, or improvements, feel free to open an Issue or submit a Pull Request.
+
+---
+
 ## License
 
 [MIT](LICENSE)
+
+---
+
+## Support the Project
+
+If Visual AI Editor helps you, consider giving the repository a star.
+
+It helps the project reach more developers and supports future development.

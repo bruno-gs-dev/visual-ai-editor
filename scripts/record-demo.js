@@ -118,6 +118,90 @@ async function centerOf(page, selector, nth = 0) {
   return { x: Math.round(box.x + box.width / 2), y: Math.round(box.y + box.height / 2) };
 }
 
+async function addHighlight(page, selector, nth = 0, color = '#6366f1') {
+  await page.evaluate(([sel, n, col]) => {
+    const el = document.querySelector(sel);
+    if (!el) return;
+    const rect = el.getBoundingClientRect();
+    const ring = document.createElement('div');
+    Object.assign(ring.style, {
+      position: 'fixed',
+      left: (rect.left - 6) + 'px',
+      top: (rect.top - 6) + 'px',
+      width: (rect.width + 12) + 'px',
+      height: (rect.height + 12) + 'px',
+      border: '3px solid ' + col,
+      borderRadius: '12px',
+      boxShadow: '0 0 0 4px ' + col + '33, 0 0 20px ' + col + '44',
+      zIndex: '2147483645',
+      pointerEvents: 'none',
+      opacity: '0',
+      transition: 'opacity 0.3s ease-out'
+    });
+    document.body.appendChild(ring);
+    requestAnimationFrame(() => { ring.style.opacity = '1'; });
+    setTimeout(() => {
+      ring.style.transition = 'opacity 0.6s ease-in';
+      ring.style.opacity = '0';
+      setTimeout(() => ring.remove(), 700);
+    }, 2000);
+  }, [selector, nth, color]);
+  await sleep(400);
+}
+
+async function addLabel(page, text, color) {
+  await page.evaluate(([txt, col]) => {
+    const label = document.createElement('div');
+    label.textContent = txt;
+    Object.assign(label.style, {
+      position: 'fixed',
+      bottom: '24px',
+      left: '50%',
+      transform: 'translateX(-50%)',
+      background: '#0b0f19ee',
+      color: col,
+      padding: '8px 20px',
+      borderRadius: '8px',
+      border: '1px solid ' + col + '44',
+      fontFamily: 'system-ui, sans-serif',
+      fontSize: '14px',
+      fontWeight: '600',
+      zIndex: '2147483645',
+      pointerEvents: 'none',
+      opacity: '0',
+      transition: 'opacity 0.3s ease-out'
+    });
+    document.body.appendChild(label);
+    requestAnimationFrame(() => { label.style.opacity = '1'; });
+    setTimeout(() => {
+      label.style.transition = 'opacity 0.5s ease-in';
+      label.style.opacity = '0';
+      setTimeout(() => label.remove(), 600);
+    }, 1500);
+  }, [text, color]);
+  await sleep(300);
+}
+
+async function zoomTo(page, selector, nth = 0, scale = 1.4, duration = 2000) {
+  await page.evaluate(([sel, n, sc, dur]) => {
+    const el = document.querySelector(sel);
+    if (!el) return;
+    el.scrollIntoView({ block: 'center', behavior: 'instant' });
+    document.body.style.transition = 'transform 0.4s cubic-bezier(.4,0,.2,1)';
+    document.body.style.transformOrigin = 'center center';
+    document.body.style.transform = 'scale(' + sc + ')';
+    setTimeout(() => {
+      document.body.style.transition = 'transform 0.4s cubic-bezier(.4,0,.2,1)';
+      document.body.style.transform = 'scale(1)';
+    }, dur);
+  }, [selector, nth, scale, duration]);
+  await sleep(duration + 500);
+  await page.evaluate(() => {
+    document.body.style.transition = 'none';
+    document.body.style.transform = 'scale(1)';
+  });
+}
+
 async function scene(browser, name, steps) {
   const dir = path.join(TMP, name);
   fs.mkdirSync(dir, { recursive: true });
@@ -148,13 +232,13 @@ async function scene(browser, name, steps) {
   return webm;
 }
 
-function toGif(webm, outFile, fps = 13, width = 900) {
+function toGif(webm, outFile, fps = 16, width = 1100) {
   fs.mkdirSync(OUT, { recursive: true });
   const palette = webm.replace(/\.webm$/, '-palette.png');
   const filters = `fps=${fps},scale=${width}:-1:flags=lanczos`;
   execFileSync('ffmpeg', ['-y', '-i', webm, '-vf', `${filters},palettegen=stats_mode=diff`, palette], { stdio: 'ignore' });
   execFileSync('ffmpeg', ['-y', '-i', webm, '-i', palette, '-lavfi',
-    `${filters}[x];[x][1:v]paletteuse=dither=bayer:bayer_scale=3`, outFile], { stdio: 'ignore' });
+    `${filters}[x];[x][1:v]paletteuse=dither=floyd_steinberg`, outFile], { stdio: 'ignore' });
   return fs.statSync(outFile).size;
 }
 
@@ -190,38 +274,40 @@ async function main() {
   if (which === 'all' || which === 'edit') {
     console.log('[record-demo] scene 1/2 — successful edit');
     const webm = await scene(browser, 'edit', async (page) => {
-      await page.evaluate(() => document.querySelector('#features').scrollIntoView({ block: 'start' }));
-      await sleep(900);
-
-      // The editor boots inactive — picking a tool is what arms it.
-      const tool = await centerOf(page, '#ai-toolbar [data-tool="cursor"]');
-      await moveTo(page, tool.x, tool.y, 800);
-      await clickAt(page, tool.x, tool.y);
-      await sleep(500);
-
-      const card = await centerOf(page, '#features .card', 1);
-      await moveTo(page, card.x, card.y, 900);
-      await sleep(400);
-      await clickAt(page, card.x, card.y);
-      await page.waitForSelector('#ai-editor-panel', { state: 'visible' });
+      await page.evaluate(() => window.scrollTo(0, 0));
       await sleep(600);
 
+      const tool = await centerOf(page, '#ai-toolbar [data-tool="cursor"]');
+      await moveTo(page, tool.x, tool.y, 700);
+      await clickAt(page, tool.x, tool.y);
+      await sleep(400);
+
+      const heading = await centerOf(page, '#hero h1');
+      await moveTo(page, heading.x, heading.y, 800);
+      await sleep(300);
+      await clickAt(page, heading.x, heading.y);
+      await page.waitForSelector('#ai-editor-panel', { state: 'visible' });
+      await sleep(400);
+
       const box = await centerOf(page, '#ai-editor-instruction');
-      await moveTo(page, box.x, box.y, 600);
+      await moveTo(page, box.x, box.y, 500);
       await clickAt(page, box.x, box.y);
-      await page.type('#ai-editor-instruction', 'add a warning badge saying Beta', { delay: 55 });
-      await sleep(500);
+      await page.type('#ai-editor-instruction', 'make the heading color indigo', { delay: 55 });
+      await sleep(400);
 
       const apply = await centerOf(page, '#ai-editor-apply');
-      await moveTo(page, apply.x, apply.y, 500);
+      await moveTo(page, apply.x, apply.y, 400);
       await clickAt(page, apply.x, apply.y);
 
       await page.waitForFunction(
         () => /✓|Changed|Alterado/.test(document.querySelector('#ai-editor-status').textContent),
         { timeout: 60000 }
       );
-      await moveTo(page, card.x, card.y - 40, 700);
-      await sleep(1600);
+      await sleep(300);
+
+      await addHighlight(page, '#hero h1', 0, '#6366f1');
+      await addLabel(page, '\u2713 Changed', '#34d399');
+      await zoomTo(page, '#hero h1', 0, 1.4, 2000);
     });
     const size = toGif(webm, path.join(OUT, 'basic-edit.gif'));
     console.log('[record-demo] docs/gifs/basic-edit.gif —', (size / 1024 / 1024).toFixed(2), 'MB');
@@ -231,37 +317,43 @@ async function main() {
     console.log('[record-demo] scene 2/2 — palette guard');
     const webm = await scene(browser, 'warning', async (page) => {
       await page.evaluate(() => document.querySelector('#features').scrollIntoView({ block: 'start' }));
-      await sleep(900);
+      await sleep(600);
 
-      // The editor boots inactive — picking a tool is what arms it.
       const tool = await centerOf(page, '#ai-toolbar [data-tool="cursor"]');
-      await moveTo(page, tool.x, tool.y, 800);
+      await moveTo(page, tool.x, tool.y, 700);
       await clickAt(page, tool.x, tool.y);
-      await sleep(500);
+      await sleep(400);
 
       const card = await centerOf(page, '#features .card', 0);
-      await moveTo(page, card.x, card.y, 900);
+      await moveTo(page, card.x, card.y, 800);
+      await sleep(300);
       await clickAt(page, card.x, card.y);
       await page.waitForSelector('#ai-editor-panel', { state: 'visible' });
-      await sleep(500);
+      await sleep(400);
 
       const box = await centerOf(page, '#ai-editor-instruction');
-      await moveTo(page, box.x, box.y, 600);
+      await moveTo(page, box.x, box.y, 500);
       await clickAt(page, box.x, box.y);
       await page.type('#ai-editor-instruction', 'change the background to pink', { delay: 55 });
-      await sleep(500);
+      await sleep(400);
 
       const apply = await centerOf(page, '#ai-editor-apply');
-      await moveTo(page, apply.x, apply.y, 500);
+      await moveTo(page, apply.x, apply.y, 400);
       await clickAt(page, apply.x, apply.y);
 
       await page.waitForSelector('#ai-editor-force', { timeout: 60000 });
-      await sleep(1400);
+      await sleep(800);
+
+      await zoomTo(page, '#ai-editor-status', 0, 1.3, 1500);
 
       const force = await centerOf(page, '#ai-editor-force');
-      await moveTo(page, force.x, force.y, 700);
+      await moveTo(page, force.x, force.y, 600);
       await clickAt(page, force.x, force.y);
-      await sleep(2000);
+      await sleep(600);
+
+      await addHighlight(page, '#features .card', 0, '#f87171');
+      await addLabel(page, '\u26a0 Off-palette \u2014 forced', '#fbbf24');
+      await zoomTo(page, '#features .card', 0, 1.4, 2000);
     });
     const size = toGif(webm, path.join(OUT, 'design-warning.gif'));
     console.log('[record-demo] docs/gifs/design-warning.gif —', (size / 1024 / 1024).toFixed(2), 'MB');
