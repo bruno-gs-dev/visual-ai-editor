@@ -57,6 +57,37 @@ AI.createUI = function(){
     '<button type="button" data-tool="pencil" title="' + AI.t('tool.pencil') + '">' + AI.SVG_PENCIL + '</button>';
   document.body.appendChild(AI.toolbar);
 
+  // --- toolbar drag ---
+  var _dragging = false, _dragOffX = 0, _dragOffY = 0;
+
+  AI.toolbar.addEventListener('mousedown', function(e){
+    if (e.target.closest('button')) return;
+    e.preventDefault();
+    _dragging = true;
+    var rect = AI.toolbar.getBoundingClientRect();
+    _dragOffX = e.clientX - rect.left;
+    _dragOffY = e.clientY - rect.top;
+    AI.toolbar.style.transform = 'none';
+    AI.toolbar.style.top = rect.top + 'px';
+    AI.toolbar.classList.add('dragging');
+  });
+
+  document.addEventListener('mousemove', function(e){
+    if (!_dragging) return;
+    var w = window.innerWidth, h = window.innerHeight;
+    var tw = AI.toolbar.offsetWidth, th = AI.toolbar.offsetHeight;
+    var x = Math.min(w - tw, Math.max(0, e.clientX - _dragOffX));
+    var y = Math.min(h - th, Math.max(0, e.clientY - _dragOffY));
+    AI.toolbar.style.left = x + 'px';
+    AI.toolbar.style.top = y + 'px';
+  });
+
+  document.addEventListener('mouseup', function(){
+    if (!_dragging) return;
+    _dragging = false;
+    AI.toolbar.classList.remove('dragging');
+  });
+
   AI.toolbar.querySelector('[data-tool="cursor"]').addEventListener('click', function(){ AI.setTool('cursor'); });
   AI.toolbar.querySelector('[data-tool="area"]').addEventListener('click', function(){ AI.setTool('area'); });
   AI.toolbar.querySelector('[data-tool="pencil"]').addEventListener('click', function(){ AI.setTool('pencil'); });
