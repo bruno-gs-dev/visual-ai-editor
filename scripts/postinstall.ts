@@ -16,7 +16,7 @@
 
 function main(){
   var path = require('path');
-  var PKG_ROOT = path.join(__dirname, '..');
+  var PKG_ROOT = path.join(__dirname, '..', '..');
 
   var projectRoot = process.env.INIT_CWD || process.cwd();
 

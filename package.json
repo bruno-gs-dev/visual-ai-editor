@@ -58,7 +58,7 @@
     "build:browser": "tsx scripts/build.ts",
     "build": "tsc && tsx scripts/build.ts",
     "dev": "tsx scripts/build.ts --watch",
-    "postinstall": "tsx scripts/postinstall.ts",
+    "postinstall": "node dist-node/scripts/postinstall.js",
     "test": "node --test test/*.test.js"
   },
   "keywords": [
