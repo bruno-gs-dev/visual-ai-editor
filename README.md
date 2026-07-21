@@ -120,28 +120,9 @@ Instead of rewriting an entire page, you simply select an existing HTML element 
 npx visual-ai-editor start
 ```
 
-First run creates a `.env` file in your project root.
+First run opens the Settings panel — configure your AI provider there.
 
-### 2. Add your API key
-
-Open `.env` and paste your key:
-
-```
-AI_API_KEY=gsk_your_key_here
-```
-
-Any OpenAI-compatible provider works. The fastest way to try it:
-
-| Provider | How to get a key | Default endpoint |
-|----------|------------------|------------------|
-| **Groq** (free tier) | [console.groq.com](https://console.groq.com) | Built-in |
-| **OpenAI** | [platform.openai.com](https://platform.openai.com) | `https://api.openai.com/v1/chat/completions` |
-| **Ollama** (local) | [ollama.com](https://ollama.com) | `http://localhost:11434/v1/chat/completions` |
-| **LM Studio** (local) | [lmstudio.ai](https://lmstudio.ai) | `http://localhost:1234/v1/chat/completions` |
-
-> Local providers (Ollama, LM Studio) don't need an API key — the server detects `localhost` endpoints automatically.
-
-### 3. Run again
+### 2. Run again
 
 ```bash
 npx visual-ai-editor start
