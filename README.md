@@ -259,105 +259,54 @@ function App() {
 
 ### Angular
 
-**Important:** The editor's toolbar can't be in your production bundle. Use a
-dynamic import guarded by your environment — and set up a proxy so
-`ng serve` (`:4200`) can reach the editor's server (`:3000`).
-
-#### 1. Proxy: `proxy.conf.json`
-
-```json
-{
-  "/api": {
-    "target": "http://localhost:3000",
-    "secure": false
-  }
-}
-```
-
-Register it in `angular.json`:
-
-```json
-"serve": {
-  "builder": "@angular-devkit/build-angular:dev-server",
-  "options": {
-    "browserTarget": "your-app:build",
-    "proxyConfig": "proxy.conf.json"
-  }
-}
-```
-
-#### 2. Singleton service (guarded by environment)
-
 ```typescript
-// ai-editor.service.ts
-import { Injectable, OnDestroy } from '@angular/core';
-import { environment } from '../environments/environment';
+import { Component, OnInit, OnDestroy } from '@angular/core';
+import AIEditor from 'visual-ai-editor';
 
-@Injectable({ providedIn: 'root' })
-export class AiEditorService implements OnDestroy {
-  private editor: any = null;
-
-  initIfDev() {
-    if (environment.production) return;
-    import('visual-ai-editor').then(({ default: AI }) => {
-      AI.init({ apiBase: '/api' });
-      this.editor = AI;
-    });
-  }
-
-  ngOnDestroy() {
-    if (this.editor) {
-      import('visual-ai-editor').then(({ default: AI }) => AI.destroy());
-      this.editor = null;
+@Component({
+  selector: 'app-root',
+  template: '<router-outlet></router-outlet>'
+})
+export class AppComponent implements OnInit, OnDestroy {
+  ngOnInit() {
+    if (!environment.production) {
+      AIEditor.init({ apiBase: 'http://localhost:3000' });
     }
   }
+  ngOnDestroy() {
+    AIEditor.destroy();
+  }
 }
 ```
 
-#### 3. Wire it in your root component
+That's it — no proxy needed, no extra config. The editor server (v1.7.0+)
+accepts cross-origin requests from `localhost:*` automatically, so calling
+`init({ apiBase: 'http://localhost:3000' })` from `ng serve` (`:4200`) just
+works. Use environment guards to keep the editor out of production builds.
 
-```typescript
-// app.component.ts
-import { Component, OnInit, OnDestroy } from '@angular/core';
-import { AiEditorService } from './ai-editor.service';
+> **Source mapping (optional):** Without a build plugin, Save targets
+> `index.html` (the SPA shell), not your `.component.html` files. Install
+> `@ai-editor/angular-plugin` ([see below](#angular-build-plugin)) to
+> auto-inject `data-ai-source` attributes during `ng serve`, enabling
+> the same agent-handoff flow as React and Vue.
+>
+> **Change detection:** `replaceWith` bypasses Angular's view engine.
+> Elements with `{{interpolation}}`, `*ngIf`, or `[binding]` may break on
+> the next CD cycle. The editor works best on structural/style markup.
 
-@Component({ selector: 'app-root', template: '<router-outlet></router-outlet>' })
-export class AppComponent implements OnInit, OnDestroy {
-  constructor(private aiEditor: AiEditorService) {}
-  ngOnInit() { this.aiEditor.initIfDev(); }
-  ngOnDestroy() { this.aiEditor.ngOnDestroy(); }
-}
-```
+#### Angular build plugin (optional)
 
-#### 4. (Optional) Build plugin for source mapping
-
-Without a build plugin, the editor can't map DOM edits back to your
-`.component.html` files — Save produces a full-page snapshot instead of a
-targeted patch. Install the optional plugin for proper source mapping:
-
-```bash
-npm install -D @ai-editor/angular-plugin
-```
-
-Then update your `angular.json`:
+For source mapping — install `@ai-editor/angular-plugin` and swap the
+builders in `angular.json`:
 
 ```json
-"build": {
-  "builder": "@ai-editor/angular-plugin:browser",
-  ...
-},
-"serve": {
-  "builder": "@ai-editor/angular-plugin:dev-server",
-  ...
-}
+"build":  { "builder": "@ai-editor/angular-plugin:browser", ... },
+"serve":  { "builder": "@ai-editor/angular-plugin:dev-server", ... }
 ```
 
-During `ng serve`, every element gets a `data-ai-source="component.ts:line"`
-attribute, enabling the exact same agent-handoff flow that React and Vue use.
-
-> **Note on change detection:** `replaceWith` bypasses Angular's view engine.
-> Elements with `{{interpolation}}`, `*ngIf`, or `[binding]` may break on the
-> next CD cycle. The editor works best on structural/style markup.
+During `ng serve`, every template element gets
+`data-ai-source="component.ts:line"`, enabling the same agent-handoff
+save flow as React and Vue.
 
 ---
 
@@ -500,10 +449,9 @@ changes to the real source, and delete each entry as it lands.
 The source location comes from React's `_debugSource` fiber data, Vue 3's `__file`
 metadata, or a `data-ai-source="path/to/File.tsx:42"` attribute when available.
 
-For **Angular**, `data-ai-source` is not emitted by the framework itself —
-install `@ai-editor/angular-plugin` to auto-tag templates during `ng serve`
-(see [Angular section](#angular) above). Without it, Save falls back to a
-full-page snapshot (best-effort in SPAs).
+For **Angular**, install `@ai-editor/angular-plugin` (see [Angular
+section](#angular) above) to auto-inject `data-ai-source` during `ng serve`.
+Without it, Save targets `index.html` (the SPA shell).
 
 ### Event listeners after an edit
 
