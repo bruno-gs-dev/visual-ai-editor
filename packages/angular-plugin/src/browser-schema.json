@@ -1,0 +1,18 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema",
+  "title": "Angular Browser Builder with data-ai-source",
+  "description": "Extends @angular-devkit/build-angular:browser with automatic data-ai-source injection in development mode",
+  "type": "object",
+  "properties": {
+    "browserTarget": {
+      "type": "string",
+      "description": "Target to build"
+    },
+    "sourceMap": {
+      "type": "object",
+      "description": "Source map options"
+    }
+  },
+  "additionalProperties": true,
+  "required": ["browserTarget"]
+}

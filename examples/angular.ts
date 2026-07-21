@@ -1,22 +1,35 @@
-import { Component, OnInit, OnDestroy } from '@angular/core';
-import AIEditor from 'visual-ai-editor';
-import 'visual-ai-editor/dist/ai-editor.css';
+/**
+ * visual-ai-editor — Angular integration example
+ *
+ * See README.md for the full setup (proxy.conf.json, environment guard,
+ * optional @ai-editor/angular-plugin for source mapping).
+ *
+ * Quick reference:
+ *   1. Create proxy.conf.json:  { "/api": { "target": "http://localhost:3000", "secure": false } }
+ *   2. Register proxy in angular.json (serve.proxyConfig)
+ *   3. Dynamic import guarded by environment.production
+ *   4. Use a singleton service (AiEditorService) wired once in AppComponent
+ */
 
-@Component({
-  selector: 'app-root',
-  template: `
-    <div class="hero">
-      <h1>Meu Site</h1>
-      <p>Clique nos elementos para editar com IA.</p>
-    </div>
-  `
-})
-export class AppComponent implements OnInit, OnDestroy {
-  ngOnInit() {
-    AIEditor.init({ apiBase: '/api' });
+import { Injectable, OnDestroy } from '@angular/core';
+import { environment } from '../environments/environment';
+
+@Injectable({ providedIn: 'root' })
+export class AiEditorService implements OnDestroy {
+  private editor: any = null;
+
+  initIfDev() {
+    if (environment.production) return;
+    import('visual-ai-editor').then(({ default: AI }) => {
+      AI.init({ apiBase: '/api' });
+      this.editor = AI;
+    });
   }
 
   ngOnDestroy() {
-    AIEditor.destroy();
+    if (this.editor) {
+      import('visual-ai-editor').then(({ default: AI }) => AI.destroy());
+      this.editor = null;
+    }
   }
 }

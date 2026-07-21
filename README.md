@@ -259,25 +259,105 @@ function App() {
 
 ### Angular
 
-```typescript
-import { Component, OnInit, OnDestroy } from '@angular/core';
-import AIEditor from 'visual-ai-editor';
-import 'visual-ai-editor/dist/ai-editor.css';
+**Important:** The editor's toolbar can't be in your production bundle. Use a
+dynamic import guarded by your environment — and set up a proxy so
+`ng serve` (`:4200`) can reach the editor's server (`:3000`).
 
-@Component({
-  selector: 'app-root',
-  template: '<router-outlet></router-outlet>'
-})
-export class AppComponent implements OnInit, OnDestroy {
-  ngOnInit() {
-    AIEditor.init({ apiBase: '/api' });
-  }
+#### 1. Proxy: `proxy.conf.json`
 
-  ngOnDestroy() {
-    AIEditor.destroy();
+```json
+{
+  "/api": {
+    "target": "http://localhost:3000",
+    "secure": false
   }
 }
 ```
+
+Register it in `angular.json`:
+
+```json
+"serve": {
+  "builder": "@angular-devkit/build-angular:dev-server",
+  "options": {
+    "browserTarget": "your-app:build",
+    "proxyConfig": "proxy.conf.json"
+  }
+}
+```
+
+#### 2. Singleton service (guarded by environment)
+
+```typescript
+// ai-editor.service.ts
+import { Injectable, OnDestroy } from '@angular/core';
+import { environment } from '../environments/environment';
+
+@Injectable({ providedIn: 'root' })
+export class AiEditorService implements OnDestroy {
+  private editor: any = null;
+
+  initIfDev() {
+    if (environment.production) return;
+    import('visual-ai-editor').then(({ default: AI }) => {
+      AI.init({ apiBase: '/api' });
+      this.editor = AI;
+    });
+  }
+
+  ngOnDestroy() {
+    if (this.editor) {
+      import('visual-ai-editor').then(({ default: AI }) => AI.destroy());
+      this.editor = null;
+    }
+  }
+}
+```
+
+#### 3. Wire it in your root component
+
+```typescript
+// app.component.ts
+import { Component, OnInit, OnDestroy } from '@angular/core';
+import { AiEditorService } from './ai-editor.service';
+
+@Component({ selector: 'app-root', template: '<router-outlet></router-outlet>' })
+export class AppComponent implements OnInit, OnDestroy {
+  constructor(private aiEditor: AiEditorService) {}
+  ngOnInit() { this.aiEditor.initIfDev(); }
+  ngOnDestroy() { this.aiEditor.ngOnDestroy(); }
+}
+```
+
+#### 4. (Optional) Build plugin for source mapping
+
+Without a build plugin, the editor can't map DOM edits back to your
+`.component.html` files — Save produces a full-page snapshot instead of a
+targeted patch. Install the optional plugin for proper source mapping:
+
+```bash
+npm install -D @ai-editor/angular-plugin
+```
+
+Then update your `angular.json`:
+
+```json
+"build": {
+  "builder": "@ai-editor/angular-plugin:browser",
+  ...
+},
+"serve": {
+  "builder": "@ai-editor/angular-plugin:dev-server",
+  ...
+}
+```
+
+During `ng serve`, every element gets a `data-ai-source="component.ts:line"`
+attribute, enabling the exact same agent-handoff flow that React and Vue use.
+
+> **Note on change detection:** `replaceWith` bypasses Angular's view engine.
+> Elements with `{{interpolation}}`, `*ngIf`, or `[binding]` may break on the
+> next CD cycle. The editor works best on structural/style markup.
 
 ---
 
@@ -406,7 +486,7 @@ The client sends `{ before, after }` pairs of exactly the HTML that changed to
 - Multi-page projects: the browser's `location.pathname` is sent automatically as `page`,
   and the server resolves it to a file inside `staticDir`, rejecting any path that escapes it.
 
-### Framework pages (React / Vue) — agent handoff
+### Framework pages (React / Vue / Angular) — agent handoff
 
 Writing rendered DOM back over JSX or a template would corrupt it, so nothing is written
 to your source. Instead the edit is appended to `.ai-editor/pending-changes.md` via
@@ -417,9 +497,13 @@ and the before/after HTML.
 manifest with an AI coding agent (Claude Code, Cursor, …), ask it to apply the listed
 changes to the real source, and delete each entry as it lands.
 
-The source location comes from React's `_debugSource` fiber data or Vue 3's `__file`
-metadata when available — or from a `data-ai-source="path/to/File.jsx:42"` attribute you
-add yourself.
+The source location comes from React's `_debugSource` fiber data, Vue 3's `__file`
+metadata, or a `data-ai-source="path/to/File.tsx:42"` attribute when available.
+
+For **Angular**, `data-ai-source` is not emitted by the framework itself —
+install `@ai-editor/angular-plugin` to auto-tag templates during `ng serve`
+(see [Angular section](#angular) above). Without it, Save falls back to a
+full-page snapshot (best-effort in SPAs).
 
 ### Event listeners after an edit
 

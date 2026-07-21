@@ -323,6 +323,23 @@ function buildApp(options){
   var app = express();
   app.use(express.json({ limit: '4mb' }));
 
+  // CORS — allow any local dev origin (localhost/127.0.0.1 on any port) so
+  // the editor works out of the box with `ng serve` (:4200), `vite` (:5173),
+  // `webpack-dev-server` (:8080), and similar without requiring a proxy.
+  // In production, the consumer is expected to reverse-proxy or set apiToken.
+  app.use(function (req, res, next){
+    var origin = req.get('origin') || '';
+    if (/^https?:\/\/(localhost|127\.0\.0\.1|\[\:\:1\]|0\.0\.0\.0)(:\d+)?$/i.test(origin)){
+      res.setHeader('Access-Control-Allow-Origin', origin);
+      res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+      res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+      res.setHeader('Access-Control-Allow-Credentials', 'true');
+      res.setHeader('Vary', 'Origin');
+    }
+    if (req.method === 'OPTIONS') return res.status(204).end();
+    next();
+  });
+
   // Block sensitive paths regardless of where staticDir points (defense in depth),
   // except this package's own public dist/ assets.
   app.use(function (req, res, next){
