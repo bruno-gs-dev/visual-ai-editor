@@ -32,7 +32,7 @@ function main(){
       console.log('[visual-ai-editor] AGENTS.md atualizado em ' + result.path + '.');
     }
   } catch (e) {
-    console.warn('[visual-ai-editor] Não foi possível instalar AGENTS.md (não crítico): ' + (e && e.message));
+    console.warn('[visual-ai-editor] Não foi possível instalar AGENTS.md (não crítico): ' + ((e as Error) && (e as Error).message));
   }
 
   var designCheck = require('../lib/design-check.js');
@@ -52,5 +52,5 @@ try {
   main();
 } catch (e) {
   // Never break `npm install` because of this.
-  console.warn('[visual-ai-editor] postinstall check falhou (não crítico): ' + (e && e.message));
+  console.warn('[visual-ai-editor] postinstall check falhou (não crítico): ' + ((e as Error) && (e as Error).message));
 }

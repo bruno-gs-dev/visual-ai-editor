@@ -1,0 +1,33 @@
+{
+  "compilerOptions": {
+    "target": "ES2020",
+    "module": "commonjs",
+    "moduleResolution": "bundler",
+    "outDir": "dist-node",
+    "rootDir": ".",
+    "strict": true,
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "forceConsistentCasingInFileNames": true,
+    "declaration": true,
+    "sourceMap": true,
+    "resolveJsonModule": true,
+    "types": ["node"],
+    "noImplicitAny": false,
+    "strictNullChecks": false,
+    "moduleDetection": "force"
+  },
+  "include": [
+    "lib/**/*.ts",
+    "server/**/*.ts",
+    "scripts/**/*.ts",
+    "bin/**/*.ts"
+  ],
+  "exclude": [
+    "node_modules",
+    "dist",
+    "dist-node",
+    "src",
+    "test"
+  ]
+}

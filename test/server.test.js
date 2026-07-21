@@ -5,7 +5,7 @@ var os = require('os');
 var path = require('path');
 var http = require('http');
 
-var serverLib = require('../server/index.js');
+var serverLib = require('../dist-node/server/index.js');
 
 var FAKE_AI_URL = 'http://fake-ai-provider.test/v1/chat/completions';
 var FAKE_OLLAMA_URL = 'http://localhost:11434/v1/chat/completions';

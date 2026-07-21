@@ -4,47 +4,61 @@
   "description": "AI-powered visual HTML editor with selection tools, design-system enforcement, and surgical source patching. Works with any OpenAI-compatible LLM provider, including local ones like Ollama.",
   "main": "dist/ai-editor.js",
   "module": "dist/ai-editor.esm.js",
-  "types": "types/index.d.ts",
+  "types": "dist-node/lib/index.d.ts",
   "exports": {
     ".": {
-      "types": "./types/index.d.ts",
+      "types": "./dist-node/lib/index.d.ts",
       "import": "./dist/ai-editor.esm.js",
       "require": "./dist/ai-editor.js",
       "default": "./dist/ai-editor.js"
     },
     "./server": {
-      "types": "./types/server.d.ts",
-      "require": "./server/index.js",
-      "default": "./server/index.js"
+      "types": "./dist-node/server/index.d.ts",
+      "require": "./dist-node/server/index.js",
+      "default": "./dist-node/server/index.js"
     },
-    "./server.js": "./server/server.js",
+    "./bin/cli": {
+      "types": "./dist-node/bin/cli.d.ts",
+      "require": "./dist-node/bin/cli.js",
+      "default": "./dist-node/bin/cli.js"
+    },
+    "./lib/*": {
+      "types": "./dist-node/lib/*.d.ts",
+      "require": "./dist-node/lib/*.js",
+      "default": "./dist-node/lib/*.js"
+    },
+    "./scripts/build": {
+      "types": "./dist-node/scripts/build.d.ts",
+      "require": "./dist-node/scripts/build.js",
+      "default": "./dist-node/scripts/build.js"
+    },
     "./dist/ai-editor.css": "./dist/ai-editor.css",
     "./package.json": "./package.json"
   },
   "files": [
     "dist/",
     "src/",
-    "server/",
+    "dist-node/",
     "templates/",
     "docs/",
     "!docs/safe-guard/",
     "!docs/gifs/",
-    "bin/",
-    "lib/",
     "types/",
-    "scripts/postinstall.js",
     "examples/",
     "demo/",
     "README.md",
-    "CHANGELOG.md"
+    "CHANGELOG.md",
+    "angular-plugin/"
   ],
   "bin": {
-    "visual-ai-editor": "bin/cli.js"
+    "visual-ai-editor": "dist-node/bin/cli.js"
   },
   "scripts": {
-    "build": "node scripts/build.js",
-    "dev": "node scripts/build.js --watch",
-    "postinstall": "node scripts/postinstall.js",
+    "build:node": "tsc",
+    "build:browser": "tsx scripts/build.ts",
+    "build": "tsc && tsx scripts/build.ts",
+    "dev": "tsx scripts/build.ts --watch",
+    "postinstall": "tsx scripts/postinstall.ts",
     "test": "node --test test/*.test.js"
   },
   "keywords": [
@@ -63,9 +77,7 @@
   ],
   "author": "bruno-gs-dev",
   "license": "MIT",
-  "sideEffects": [
-    "*.css"
-  ],
+  "sideEffects": true,
   "dependencies": {
     "chalk": "^4.1.2",
     "dotenv": "^16.4.5",
@@ -73,8 +85,16 @@
     "prompts": "^2.4.2"
   },
   "devDependencies": {
+    "@angular-devkit/architect": "^0.2200.7",
+    "@angular-devkit/core": "^22.0.7",
+    "@angular/compiler": "^22.0.7",
+    "@types/express": "^5.0.6",
+    "@types/node": "^26.1.1",
+    "esbuild": "^0.28.1",
     "marked": "^18.0.6",
-    "playwright": "^1.61.1"
+    "playwright": "^1.61.1",
+    "tsx": "^4.23.1",
+    "typescript": "^7.0.2"
   },
   "repository": {
     "type": "git",

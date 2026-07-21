@@ -352,7 +352,7 @@ function buildApp(options){
   // this package physically lives (local node_modules, npx cache, pnpm store).
   // The node_modules/visual-ai-editor/dist path keeps working for manual
   // wiring, but injected pages and new docs use this one.
-  app.use('/__ai-editor', express.static(path.join(__dirname, '..', 'dist')));
+  app.use('/__ai-editor', express.static(path.resolve(__dirname, '..', '..', 'dist')));
 
   if (options.inject === true){
     app.use(function (req, res, next){
@@ -441,7 +441,7 @@ function buildApp(options){
       res.json({ html: result.html });
     } catch (err) {
       console.error('[ai-editor] /api/edit error:', err);
-      res.status(500).json({ error: err.message || t('edit.api-error') });
+      res.status(500).json({ error: (err as Error).message || t('edit.api-error') });
     }
   });
 
@@ -481,10 +481,10 @@ function buildApp(options){
     var backupPath = null;
     if (options.backup !== false){
       try { backupPath = backupFile(staticDir, target); }
-      catch (e) { console.warn('[ai-editor] backup failed (non-critical):', e.message); }
+      catch (e) { console.warn('[ai-editor] backup failed (non-critical):', (e as Error).message); }
     }
 
-    function respondWrite(content, mode, extra){
+    function respondWrite(content: any, mode: any, extra?: any){
       fs.writeFile(target, content, 'utf8', function (err){
         if (err){
           console.error('[ai-editor] save error:', err);
@@ -573,7 +573,7 @@ function buildApp(options){
       fs.appendFileSync(file, out.join('\n'), 'utf8');
       res.json({ ok: true, path: file, count: changes.length });
     } catch (err) {
-      res.status(500).json({ error: t('save.write-error', { error: err.message }) });
+      res.status(500).json({ error: t('save.write-error', { error: (err as Error).message }) });
     }
   });
 

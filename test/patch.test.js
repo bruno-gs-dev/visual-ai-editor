@@ -1,6 +1,6 @@
 var test = require('node:test');
 var assert = require('node:assert/strict');
-var patchLib = require('../lib/patch.js');
+var patchLib = require('../dist-node/lib/patch.js');
 
 test('applyPatch: exact match replaces the substring', function(){
   var source = '<div><h1>Old title</h1></div>';

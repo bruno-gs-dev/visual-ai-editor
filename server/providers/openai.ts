@@ -26,9 +26,9 @@ module.exports = {
         { role: 'user', content: prompts.user }
       ]
     };
-    if (useJsonMode) body.response_format = { type: 'json_object' };
+    if (useJsonMode) (body as any).response_format = { type: 'json_object' };
 
-    var headers = { 'Content-Type': 'application/json' };
+    var headers: Record<string, string> = { 'Content-Type': 'application/json' };
     if (provider.apiKey) headers['Authorization'] = 'Bearer ' + provider.apiKey;
 
     return {

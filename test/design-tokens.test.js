@@ -1,6 +1,6 @@
 var test = require('node:test');
 var assert = require('node:assert/strict');
-var tokens = require('../lib/design-tokens.js');
+var tokens = require('../dist-node/lib/design-tokens.js');
 
 test('normalizeColor: expands short hex', function(){
   assert.equal(tokens.normalizeColor('#abc'), '#aabbcc');

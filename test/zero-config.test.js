@@ -4,8 +4,8 @@ var fs = require('fs');
 var os = require('os');
 var path = require('path');
 
-var envInit = require('../lib/env-init.js');
-var serverLib = require('../server/index.js');
+var envInit = require('../dist-node/lib/env-init.js');
+var serverLib = require('../dist-node/server/index.js');
 
 async function withTempDir(fn){
   var dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ai-editor-test-'));

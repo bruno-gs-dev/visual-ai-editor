@@ -30,10 +30,10 @@ function runInBrowserSandbox(file){
 test('dist/ai-editor.esm.js contains marked source (sets a global when evaluated)', function(){
   var esm = fs.readFileSync(path.join(DIST, 'ai-editor.esm.js'), 'utf8');
   assert.match(esm, /marked v[\d.]+ \(bundled/);
-  assert.match(esm, /export default AI;/);
+  assert.match(esm, /export \{/);
 });
 
 test('dist/ai-editor.min.js did not corrupt string literals containing "://"', function(){
   var min = fs.readFileSync(path.join(DIST, 'ai-editor.min.js'), 'utf8');
-  assert.match(min, /SVG_NS:'http:\/\/www\.w3\.org\/2000\/svg'/);
+  assert.match(min, /SVG_NS:["']http:\/\/www\.w3\.org\/2000\/svg["']/);
 });

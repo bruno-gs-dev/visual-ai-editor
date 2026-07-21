@@ -101,13 +101,13 @@ const CURSOR_SETUP = `
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 async function moveTo(page, x, y, ms = 700) {
-  await page.evaluate(([x, y, ms]) => window.__recMove(x, y, ms), [x, y, ms]);
+  await page.evaluate(([x, y, ms]) => (window as any).__recMove(x, y, ms), [x, y, ms]);
   await page.mouse.move(x, y, { steps: Math.max(8, Math.round(ms / 25)) });
   await sleep(ms * 0.35);
 }
 
 async function clickAt(page, x, y) {
-  await page.evaluate(([x, y]) => window.__recClick(x, y), [x, y]);
+  await page.evaluate(([x, y]) => (window as any).__recClick(x, y), [x, y]);
   await page.mouse.click(x, y);
   await sleep(320);
 }
